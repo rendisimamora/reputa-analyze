@@ -24,7 +24,7 @@ export interface ScanResult {
   newMentions: number;
   analyzed: number;
   errors: number;
-  score: number;
+  score: number | null;
 }
 
 /** Starts a scan in the background. Returns the new scanRunId immediately. */
@@ -64,7 +64,7 @@ export async function runScan(projectId: string, trigger: ScanTrigger = 'MANUAL'
     newMentions: final?.newMentions ?? 0,
     analyzed: final?.analyzed ?? 0,
     errors: final?.errors ?? 0,
-    score: progress.get(scanRunId)?.score ?? 0,
+    score: progress.get(scanRunId)?.score ?? null,
   };
 }
 
@@ -153,6 +153,7 @@ async function executeScan(
     });
 
     const limit = pLimit(3);
+    const analyzerErrors: string[] = [];
     await Promise.all(
       toAnalyzeRows.map((m) =>
         limit(async () => {
@@ -187,12 +188,22 @@ async function executeScan(
                 label: `Menganalisa sentimen — ${analyzed}/${cur.toAnalyze}`,
               });
             }
-          } catch {
+          } catch (err) {
             errors++;
+            const msg = err instanceof Error ? err.message : String(err);
+            if (analyzerErrors.length < 5) analyzerErrors.push(msg);
+            console.error(`[analyzer] mention ${m.id} (${m.sourceKey}) FAILED:`, msg);
           }
         }),
       ),
     );
+
+    // Surface analyzer error to scan progress so the UI can show it
+    if (analyzerErrors.length > 0 && analyzed === 0) {
+      progress.update(scanRunId, {
+        error: `Semua analisa sentimen gagal. Contoh error: ${analyzerErrors[0]}`,
+      });
+    }
 
     // ---- SCORING ----
     progress.update(scanRunId, { stage: 'SCORING', label: 'Menghitung reputation score…' });

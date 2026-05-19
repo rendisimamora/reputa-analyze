@@ -22,7 +22,7 @@ interface AlertDraft {
   payload?: Record<string, unknown>;
 }
 
-export async function evaluateAlerts(projectId: string, currentScore: number) {
+export async function evaluateAlerts(projectId: string, currentScore: number | null) {
   const mentions = await prisma.mention.findMany({
     where: { projectId },
     orderBy: { publishedAt: 'desc' },
@@ -68,7 +68,7 @@ export async function evaluateAlerts(projectId: string, currentScore: number) {
     where: { projectId },
     orderBy: { createdAt: 'desc' },
   });
-  if (lastReport) {
+  if (lastReport && currentScore !== null) {
     const prevScore = (lastReport.payload as { score?: number } | null)?.score;
     if (typeof prevScore === 'number' && prevScore - currentScore >= 15) {
       drafts.push({

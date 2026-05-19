@@ -1,17 +1,18 @@
 'use client';
 
 import { use, useCallback, useEffect, useRef, useState } from 'react';
-import AppShell from '@/components/AppShell';
 import { StatCard } from '@/components/StatCard';
 import { SentimentBadge, CrawlStatusBadge } from '@/components/SentimentBadge';
 import { SentimentTrendChart, MentionTrendChart, SourceBarChart, SentimentPie } from '@/components/charts';
 import { ScanProgressBar, type ScanProgress } from '@/components/ScanProgressBar';
-import { AlertTriangle, BarChart3, BrainCircuit, MessageSquare, RefreshCw, ShieldAlert, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { DashboardSkeleton } from '@/components/DashboardSkeleton';
+import { AlertTriangle, BarChart3, BrainCircuit, MessageSquare, RefreshCw, ShieldAlert, ThumbsDown, ThumbsUp, Sparkles } from 'lucide-react';
 
 interface DashboardData {
   project: { id: string; name: string; description: string | null; lastScanAt: string | null };
-  reputation: { score: number; category: 'Excellent' | 'Good' | 'Risky' | 'Critical'; counts: { total: number; positive: number; neutral: number; negative: number; distinctSources: number } };
-  totals: { mentions: number; positive: number; neutral: number; negative: number };
+  reputation: { score: number | null; category: 'Excellent' | 'Good' | 'Risky' | 'Critical' | 'No data'; counts: { total: number; analyzed: number; positive: number; neutral: number; negative: number; distinctSources: number } };
+  totals: { mentions: number; analyzed: number; positive: number; neutral: number; negative: number };
+  aiSummaryError?: string;
   trend: Array<{ date: string; positive: number; neutral: number; negative: number }>;
   mentionTrend: Array<{ date: string; count: number }>;
   sourceDistribution: Array<{ source: string; sourceKey: string; count: number }>;
@@ -27,13 +28,25 @@ export default function ProjectDashboard({ params }: { params: Promise<{ id: str
   const [data, setData] = useState<DashboardData | null>(null);
   const [progress, setProgress] = useState<ScanProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reanalyzing, setReanalyzing] = useState(false);
+  const [reanalyzeMsg, setReanalyzeMsg] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async (withAi = false) => {
     const url = `/api/projects/${id}/dashboard${withAi ? '?ai=1' : ''}`;
-    const r = await fetch(url);
-    if (!r.ok) { setError('Failed to load dashboard'); return; }
-    setData(await r.json());
+    try {
+      const r = await fetch(url);
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        setError(j.error ? `Gagal memuat dashboard: ${j.error}` : 'Gagal memuat dashboard');
+        return;
+      }
+      const json = await r.json();
+      setData(json);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? `Gagal memuat dashboard: ${e.message}` : 'Gagal memuat dashboard');
+    }
   }, [id]);
 
   useEffect(() => {
@@ -86,15 +99,45 @@ export default function ProjectDashboard({ params }: { params: Promise<{ id: str
     startPolling(scanRunId);
   }
 
-  const score = data?.reputation.score ?? 0;
-  const tone = score >= 80 ? 'good' : score >= 60 ? 'default' : score >= 40 ? 'warn' : 'bad';
+  async function reanalyze() {
+    setReanalyzing(true);
+    setReanalyzeMsg(null);
+    try {
+      const r = await fetch(`/api/projects/${id}/reanalyze`, { method: 'POST' });
+      const j = await r.json();
+      if (!r.ok) {
+        setReanalyzeMsg(j.error ?? 'Re-analyze gagal');
+      } else {
+        setReanalyzeMsg(`Berhasil: ${j.analyzed}/${j.total} mention dianalisis${j.errors ? ` (${j.errors} error)` : ''}.`);
+        await load(true);
+      }
+    } catch (e) {
+      setReanalyzeMsg(e instanceof Error ? e.message : 'Re-analyze gagal');
+    } finally {
+      setReanalyzing(false);
+    }
+  }
+
+  const score = data?.reputation.score ?? null;
+  const tone = score === null ? 'default' : score >= 80 ? 'good' : score >= 60 ? 'default' : score >= 40 ? 'warn' : 'bad';
   const scanning = progress && progress.stage !== 'DONE' && progress.stage !== 'FAILED';
+  const pending = data ? Math.max(0, data.totals.mentions - data.totals.analyzed) : 0;
+
+  // Initial load — show skeleton while we wait for first dashboard payload
+  if (!data && !error) {
+    return (
+      <>
+        {progress && <ScanProgressBar progress={progress} />}
+        <DashboardSkeleton />
+      </>
+    );
+  }
 
   return (
-    <AppShell projectId={id}>
+    <>
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{data?.project.name ?? 'Loading…'}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{data?.project.name ?? 'Project'}</h1>
           <p className="text-sm text-ink-400">
             {data?.project.description || 'Real-time reputation intelligence dari media Indonesia.'}
           </p>
@@ -111,13 +154,40 @@ export default function ProjectDashboard({ params }: { params: Promise<{ id: str
       {progress && <ScanProgressBar progress={progress} />}
       {error && <div className="card border-danger-500/40 bg-danger-500/5 text-sm text-danger-500 p-3 mb-4">{error}</div>}
 
+      {pending > 0 && (
+        <div className="card border-warning-500/40 bg-warning-500/5 p-4 mb-4 flex items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <Sparkles size={18} className="text-warning-500 mt-0.5 shrink-0" />
+            <div>
+              <div className="text-sm font-medium text-ink-100">{pending} mention belum dianalisis sentimen</div>
+              <div className="text-xs text-ink-300 mt-0.5">
+                AI sentiment analysis terlewat (kemungkinan OpenAI key/quota saat scan terakhir). Klik tombol di samping untuk re-analyze.
+              </div>
+              {reanalyzeMsg && <div className="text-xs text-accent-400 mt-1">{reanalyzeMsg}</div>}
+            </div>
+          </div>
+          <button onClick={reanalyze} className="btn-primary shrink-0" disabled={reanalyzing}>
+            <BrainCircuit size={14} className={reanalyzing ? 'animate-pulse' : ''}/>
+            {reanalyzing ? 'Analyzing…' : `Re-analyze ${pending}`}
+          </button>
+        </div>
+      )}
+
+      {data?.aiSummaryError && (
+        <div className="card border-warning-500/30 bg-warning-500/5 p-3 mb-4 text-xs text-warning-500">
+          ⚠ AI executive summary tidak tersedia: {data.aiSummaryError}
+        </div>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="card-glow p-4">
           <div className="text-xs uppercase tracking-wider text-ink-300">Reputation Score</div>
-          <div className={`mt-2 text-4xl font-bold ${tone === 'good' ? 'text-success-500' : tone === 'warn' ? 'text-warning-500' : tone === 'bad' ? 'text-danger-500' : 'text-accent-400'}`}>
-            {score}
+          <div className={`mt-2 text-4xl font-bold ${score === null ? 'text-ink-500' : tone === 'good' ? 'text-success-500' : tone === 'warn' ? 'text-warning-500' : tone === 'bad' ? 'text-danger-500' : 'text-accent-400'}`}>
+            {score === null ? '—' : score}
           </div>
-          <div className="mt-1 text-xs text-ink-300">{data?.reputation.category ?? '—'}</div>
+          <div className="mt-1 text-xs text-ink-300">
+            {score === null ? `Butuh ≥3 mention dianalisis (${data?.reputation.counts.analyzed ?? 0} so far)` : data?.reputation.category}
+          </div>
         </div>
         <StatCard label="Total Mentions" value={data?.totals.mentions ?? 0} Icon={MessageSquare} />
         <StatCard label="Positive" value={data?.totals.positive ?? 0} Icon={ThumbsUp} tone="good" />
@@ -213,6 +283,6 @@ export default function ProjectDashboard({ params }: { params: Promise<{ id: str
           </div>
         </div>
       </div>
-    </AppShell>
+    </>
   );
 }

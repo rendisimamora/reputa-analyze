@@ -1,7 +1,6 @@
 'use client';
 
 import { use, useEffect, useState } from 'react';
-import AppShell from '@/components/AppShell';
 import { clsx } from 'clsx';
 import { Bell, Check } from 'lucide-react';
 
@@ -36,7 +35,7 @@ export default function AlertsPage({ params }: { params: Promise<{ id: string }>
   }
 
   return (
-    <AppShell projectId={id}>
+    <>
       <h1 className="text-2xl font-semibold tracking-tight mb-1 flex items-center gap-2"><Bell size={20}/> Alerts</h1>
       <p className="text-sm text-ink-400 mb-6">Notifikasi otomatis berdasarkan tren sentimen, toksisitas, dan kredibilitas media.</p>
 
@@ -72,6 +71,6 @@ export default function AlertsPage({ params }: { params: Promise<{ id: string }>
           </div>
         ))}
       </div>
-    </AppShell>
+    </>
   );
 }

@@ -3,14 +3,13 @@
  */
 import { prisma } from '@/lib/prisma';
 import { computeReputation } from './reputationScore';
-import { openai } from '@/lib/openai';
-import { env } from '@/lib/env';
+import { aiClient, aiModel, providerSupportsJsonMode, hasAiConfigured } from '@/lib/aiClient';
 import type { Mention } from '@prisma/client';
 
 export interface DashboardSnapshot {
   project: { id: string; name: string; description: string | null; lastScanAt: Date | null };
   reputation: ReturnType<typeof computeReputation>;
-  totals: { mentions: number; positive: number; neutral: number; negative: number };
+  totals: { mentions: number; analyzed: number; positive: number; neutral: number; negative: number };
   trend: Array<{ date: string; positive: number; neutral: number; negative: number }>;
   mentionTrend: Array<{ date: string; count: number }>;
   sourceDistribution: Array<{ source: string; sourceKey: string; count: number }>;
@@ -19,6 +18,7 @@ export interface DashboardSnapshot {
   sourceHealth: Array<{ sourceKey: string; lastStatus: string; lastFetchedAt: Date | null; errors: number }>;
   recent: Mention[];
   aiSummary?: { executive: string; recommendation: string };
+  aiSummaryError?: string;
 }
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -41,6 +41,7 @@ export async function getDashboardSnapshot(projectId: string, opts?: { includeAi
 
   const totals = {
     mentions: mentions.length,
+    analyzed: mentions.filter((m) => m.analyzedAt && m.sentiment).length,
     positive: mentions.filter((m) => m.sentiment === 'POSITIVE').length,
     neutral: mentions.filter((m) => m.sentiment === 'NEUTRAL').length,
     negative: mentions.filter((m) => m.sentiment === 'NEGATIVE').length,
@@ -82,9 +83,9 @@ export async function getDashboardSnapshot(projectId: string, opts?: { includeAi
   const posTopics = topicCounts(mentions.filter((m) => m.sentiment === 'POSITIVE'));
   const negTopics = topicCounts(mentions.filter((m) => m.sentiment === 'NEGATIVE'));
 
-  // source health
+  // source health — STRICTLY per-project (no cross-project leakage)
   const health = await prisma.sourceStat.findMany({
-    where: { OR: [{ projectId }, { projectId: null }] },
+    where: { projectId },
     orderBy: { lastFetchedAt: 'desc' },
   });
   const sourceHealth = health.map((h) => ({
@@ -97,8 +98,15 @@ export async function getDashboardSnapshot(projectId: string, opts?: { includeAi
   const recent = mentions.slice(0, 25);
 
   let aiSummary: DashboardSnapshot['aiSummary'];
-  if (opts?.includeAi && env.openaiKey) {
-    aiSummary = await buildAiSummary(project.name, mentions.slice(0, 60), reputation.score, reputation.category);
+  let aiSummaryError: string | undefined;
+  if (opts?.includeAi && hasAiConfigured()) {
+    try {
+      aiSummary = await buildAiSummary(project.name, mentions.slice(0, 60), reputation.score, reputation.category);
+    } catch (err) {
+      // Never break the dashboard because of an AI failure
+      aiSummaryError = err instanceof Error ? err.message : String(err);
+      console.warn('[insights] AI summary failed:', aiSummaryError);
+    }
   }
 
   return {
@@ -118,6 +126,7 @@ export async function getDashboardSnapshot(projectId: string, opts?: { includeAi
     sourceHealth,
     recent,
     aiSummary,
+    aiSummaryError,
   };
 }
 
@@ -137,13 +146,13 @@ function topicCounts(mentions: Mention[]): Array<{ topic: string; count: number 
 async function buildAiSummary(
   subject: string,
   mentions: Mention[],
-  score: number,
+  score: number | null,
   category: string,
 ): Promise<{ executive: string; recommendation: string }> {
   if (!mentions.length) {
     return {
-      executive: `Belum ada mention untuk "${subject}".`,
-      recommendation: 'Jalankan scan untuk memulai monitoring.',
+      executive: `Belum ada mention untuk "${subject}". Coba kata kunci yang lebih sederhana — misal nama singkatan, brand, atau nama tokoh tanpa gelar.`,
+      recommendation: 'Jalankan scan dengan keyword yang lebih umum (1-3 kata). Hindari frasa panjang yang jarang ditulis utuh di artikel berita.',
     };
   }
   const samples = mentions.slice(0, 25).map((m) => ({
@@ -155,32 +164,34 @@ async function buildAiSummary(
     summary: m.aiSummary,
   }));
 
-  const completion = await openai().chat.completions.create({
-    model: env.openaiModel,
-    response_format: { type: 'json_object' },
+  const completion = await aiClient().chat.completions.create({
+    model: aiModel(),
+    ...(providerSupportsJsonMode() ? { response_format: { type: 'json_object' as const } } : {}),
     temperature: 0.3,
     messages: [
       {
         role: 'system',
-        content: `Anda adalah analis reputasi media. Berdasarkan ringkasan mention berikut tentang subjek "${subject}" (reputation score: ${score}/${100}, kategori ${category}), buat ringkasan untuk dashboard.
+        content: `Anda adalah analis reputasi media. Berdasarkan ringkasan mention berikut tentang subjek "${subject}" (reputation score: ${score ?? 'N/A'}/100, kategori ${category}), buat ringkasan untuk dashboard.
 
 Output JSON dengan dua field:
 {
   "executive": string 2-4 kalimat dalam Bahasa Indonesia — ringkasan eksekutif kondisi reputasi saat ini,
   "recommendation": string 2-4 kalimat — rekomendasi tindakan kongkret untuk humas/PR
-}`,
+}
+HANYA JSON, tidak ada teks pembuka/penutup.`,
       },
       { role: 'user', content: JSON.stringify(samples) },
     ],
   });
 
-  try {
-    const parsed = JSON.parse(completion.choices[0]?.message?.content ?? '{}') as Record<string, unknown>;
-    return {
-      executive: String(parsed.executive ?? '').slice(0, 1200),
-      recommendation: String(parsed.recommendation ?? '').slice(0, 1200),
-    };
-  } catch {
-    return { executive: '', recommendation: '' };
+  const raw = completion.choices[0]?.message?.content ?? '{}';
+  let parsed: Record<string, unknown> = {};
+  try { parsed = JSON.parse(raw); } catch {
+    const m = raw.match(/\{[\s\S]*\}/);
+    if (m) { try { parsed = JSON.parse(m[0]); } catch { /* */ } }
   }
+  return {
+    executive: String(parsed.executive ?? '').slice(0, 1200),
+    recommendation: String(parsed.recommendation ?? '').slice(0, 1200),
+  };
 }

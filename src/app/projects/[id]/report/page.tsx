@@ -1,14 +1,13 @@
 'use client';
 
 import { use, useEffect, useRef, useState } from 'react';
-import AppShell from '@/components/AppShell';
 import { FileDown, FileText, RefreshCw } from 'lucide-react';
 import { SentimentTrendChart, MentionTrendChart, SourceBarChart } from '@/components/charts';
 import { SentimentBadge } from '@/components/SentimentBadge';
 
 interface ReportData {
   project: { name: string };
-  reputation: { score: number; category: string };
+  reputation: { score: number | null; category: string };
   totals: { mentions: number; positive: number; neutral: number; negative: number };
   trend: Array<{ date: string; positive: number; neutral: number; negative: number }>;
   mentionTrend: Array<{ date: string; count: number }>;
@@ -46,7 +45,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
   }
 
   return (
-    <AppShell projectId={id}>
+    <>
       <style>{`@media print { aside { display: none } main { padding: 0 !important } .no-print { display: none } body { background: white !important; color: black !important } .card { border: 1px solid #ddd !important; background: white !important; box-shadow: none !important } * { color: black !important } }`}</style>
 
       <div className="flex items-center justify-between mb-4 no-print">
@@ -68,7 +67,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
             <div className="text-xs uppercase tracking-wider text-ink-400">Subject</div>
             <div className="text-xl font-semibold">{report.project.name}</div>
             <div className="mt-2 grid grid-cols-4 gap-4">
-              <div><div className="text-xs text-ink-400">Reputation</div><div className="text-2xl font-bold">{report.reputation.score}</div><div className="text-xs">{report.reputation.category}</div></div>
+              <div><div className="text-xs text-ink-400">Reputation</div><div className="text-2xl font-bold">{report.reputation.score ?? '—'}</div><div className="text-xs">{report.reputation.category}</div></div>
               <div><div className="text-xs text-ink-400">Mentions</div><div className="text-2xl font-bold">{report.totals.mentions}</div></div>
               <div><div className="text-xs text-ink-400">Positive</div><div className="text-2xl font-bold text-success-500">{report.totals.positive}</div></div>
               <div><div className="text-xs text-ink-400">Negative</div><div className="text-2xl font-bold text-danger-500">{report.totals.negative}</div></div>
@@ -115,6 +114,6 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
           )}
         </div>
       )}
-    </AppShell>
+    </>
   );
 }

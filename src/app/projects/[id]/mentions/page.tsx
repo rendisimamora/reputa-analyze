@@ -1,7 +1,6 @@
 'use client';
 
 import { use, useEffect, useState } from 'react';
-import AppShell from '@/components/AppShell';
 import { SentimentBadge, CrawlStatusBadge } from '@/components/SentimentBadge';
 import { ExternalLink } from 'lucide-react';
 
@@ -29,7 +28,7 @@ export default function MentionsPage({ params }: { params: Promise<{ id: string 
   const [total, setTotal] = useState(0);
   const [filters, setFilters] = useState({ q: '', sentiment: '', source: '', method: '', from: '', to: '' });
   const [sources, setSources] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     void load();
@@ -49,7 +48,7 @@ export default function MentionsPage({ params }: { params: Promise<{ id: string 
   }
 
   return (
-    <AppShell projectId={id}>
+    <>
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Mentions</h1>
@@ -105,6 +104,19 @@ export default function MentionsPage({ params }: { params: Promise<{ id: string 
               </tr>
             </thead>
             <tbody>
+              {loading && items.length === 0 && [0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
+                <tr key={`s-${i}`} className="animate-pulse" style={{ animationDelay: `${i * 60}ms` }}>
+                  <td><div className="h-3 w-20 bg-ink-700/60 rounded" /></td>
+                  <td><div className="h-3 w-20 bg-ink-700/60 rounded" /></td>
+                  <td><div className="h-3 w-72 bg-ink-700/60 rounded" /><div className="h-2.5 w-56 bg-ink-700/40 rounded mt-1" /></td>
+                  <td><div className="h-4 w-16 bg-ink-700/60 rounded-full" /></td>
+                  <td><div className="h-3 w-8 bg-ink-700/60 rounded" /></td>
+                  <td><div className="h-3 w-14 bg-ink-700/60 rounded" /></td>
+                  <td><div className="h-3 w-12 bg-ink-700/60 rounded" /></td>
+                  <td><div className="h-4 w-12 bg-ink-700/60 rounded-full" /></td>
+                  <td><div className="h-3 w-4 bg-ink-700/60 rounded" /></td>
+                </tr>
+              ))}
               {items.length === 0 && !loading && (
                 <tr><td colSpan={9} className="text-center text-ink-400 py-6">Belum ada mention yang sesuai filter.</td></tr>
               )}
@@ -128,6 +140,6 @@ export default function MentionsPage({ params }: { params: Promise<{ id: string 
           </table>
         </div>
       </div>
-    </AppShell>
+    </>
   );
 }

@@ -1,7 +1,6 @@
 'use client';
 
 import { use, useEffect, useState } from 'react';
-import AppShell from '@/components/AppShell';
 import { CrawlStatusBadge } from '@/components/SentimentBadge';
 
 interface CrawlLog {
@@ -24,7 +23,7 @@ export default function CrawlLogsPage({ params }: { params: Promise<{ id: string
   }, [id]);
 
   return (
-    <AppShell projectId={id}>
+    <>
       <h1 className="text-2xl font-semibold tracking-tight mb-1">Crawl Logs</h1>
       <p className="text-sm text-ink-400 mb-6">Setiap fetch ke RSS/halaman publik dicatat untuk audit & debugging.</p>
 
@@ -52,6 +51,6 @@ export default function CrawlLogsPage({ params }: { params: Promise<{ id: string
           </table>
         </div>
       </div>
-    </AppShell>
+    </>
   );
 }

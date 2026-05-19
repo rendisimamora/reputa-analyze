@@ -2,24 +2,36 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { Activity, BarChart3, Bell, FileText, LogOut, Radar, Search } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Activity, BarChart3, Bell, ChevronDown, FileText, FolderKanban, LogOut, Plus, Radar, Search } from 'lucide-react';
 import { clsx } from 'clsx';
 
 interface Project { id: string; name: string }
 interface User { id: string; email: string; name: string | null }
 
 export default function AppShell({
-  projectId,
+  projectId: projectIdProp,
   children,
 }: {
+  /** Optional override. Normally derived from pathname so the shell can be mounted
+   *  inside a Next.js layout (so it doesn't re-mount on intra-route navigation). */
   projectId?: string;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  // Derive projectId from /projects/<id>(/...)? — works inside the projects layout
+  const derivedProjectId = (() => {
+    const m = pathname.match(/^\/projects\/([^/]+)/);
+    if (!m) return undefined;
+    if (m[1] === 'new') return undefined;
+    return m[1];
+  })();
+  const projectId = projectIdProp ?? derivedProjectId;
   const [user, setUser] = useState<User | null>(null);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<Project[] | null>(null);
+  const [open, setOpen] = useState(false);
+  const ddRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     (async () => {
@@ -31,10 +43,27 @@ export default function AppShell({
     })();
   }, [router]);
 
+  // Close dropdown on outside click / escape
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (ddRef.current && !ddRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST' });
     router.push('/login');
   }
+
+  const currentProject = projects?.find((p) => p.id === projectId) ?? null;
 
   const nav = projectId
     ? [
@@ -59,22 +88,77 @@ export default function AppShell({
           </div>
         </Link>
 
-        <div className="text-[11px] uppercase tracking-wider text-ink-400 mb-2">Projects</div>
-        <nav className="space-y-1 mb-6 max-h-56 overflow-auto scrollbar">
-          {projects.map((p) => (
-            <Link
-              key={p.id}
-              href={`/projects/${p.id}`}
-              className={clsx(
-                'block text-sm rounded-md px-2 py-1.5 truncate',
-                p.id === projectId ? 'bg-accent-500/10 text-accent-400 border border-accent-500/20' : 'hover:bg-ink-800/80 text-ink-200',
+        {/* Project dropdown */}
+        <div className="text-[11px] uppercase tracking-wider text-ink-400 mb-2">Project</div>
+        <div ref={ddRef} className="relative mb-6">
+          {projects === null ? (
+            <div className="h-9 rounded-lg bg-ink-700/40 animate-pulse" />
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => setOpen((v) => !v)}
+                className={clsx(
+                  'w-full flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm transition',
+                  open ? 'border-accent-500/40 bg-ink-800/80' : 'border-ink-700 bg-ink-900/60 hover:border-ink-600 hover:bg-ink-800/60',
+                )}
+              >
+                <span className="flex items-center gap-2 min-w-0 flex-1">
+                  <FolderKanban size={14} className="text-accent-400 shrink-0" />
+                  <span className="truncate text-left">
+                    {currentProject ? currentProject.name : projects.length === 0 ? 'Belum ada project' : 'Pilih project'}
+                  </span>
+                </span>
+                <ChevronDown
+                  size={14}
+                  className={clsx('text-ink-400 shrink-0 transition-transform', open && 'rotate-180')}
+                />
+              </button>
+
+              {open && (
+                <div className="absolute left-0 right-0 top-full mt-2 z-30 rounded-lg border border-ink-700 bg-ink-900/95 backdrop-blur shadow-xl overflow-hidden">
+                  <div className="max-h-72 overflow-auto scrollbar py-1">
+                    {projects.length === 0 ? (
+                      <div className="text-xs text-ink-500 px-3 py-3 italic">Belum ada project.</div>
+                    ) : (
+                      projects.map((p) => {
+                        const active = p.id === projectId;
+                        return (
+                          <Link
+                            key={p.id}
+                            href={`/projects/${p.id}`}
+                            onClick={() => setOpen(false)}
+                            className={clsx(
+                              'flex items-center justify-between gap-2 px-3 py-2 text-sm truncate',
+                              active ? 'bg-accent-500/10 text-accent-400' : 'text-ink-200 hover:bg-ink-800',
+                            )}
+                          >
+                            <span className="truncate">{p.name}</span>
+                            {active && <span className="w-1.5 h-1.5 rounded-full bg-accent-400 shrink-0" />}
+                          </Link>
+                        );
+                      })
+                    )}
+                  </div>
+                  <Link
+                    href="/projects/new"
+                    onClick={() => setOpen(false)}
+                    className="flex items-center gap-2 px-3 py-2 text-xs text-accent-400 border-t border-ink-800 hover:bg-ink-800"
+                  >
+                    <Plus size={12} /> New project
+                  </Link>
+                  <Link
+                    href="/projects"
+                    onClick={() => setOpen(false)}
+                    className="block px-3 py-2 text-xs text-ink-400 border-t border-ink-800 hover:bg-ink-800"
+                  >
+                    Lihat semua project →
+                  </Link>
+                </div>
               )}
-            >
-              {p.name}
-            </Link>
-          ))}
-          <Link href="/projects/new" className="block text-xs text-accent-400 mt-2 hover:underline">+ New project</Link>
-        </nav>
+            </>
+          )}
+        </div>
 
         {nav.length > 0 && (
           <>
@@ -102,7 +186,11 @@ export default function AppShell({
         )}
 
         <div className="mt-auto pt-4 border-t border-ink-800">
-          <div className="text-xs text-ink-300 truncate">{user?.email}</div>
+          {user ? (
+            <div className="text-xs text-ink-300 truncate">{user.email}</div>
+          ) : (
+            <div className="h-3 w-32 bg-ink-700/60 rounded animate-pulse" />
+          )}
           <button onClick={logout} className="mt-2 flex items-center gap-1 text-xs text-ink-400 hover:text-danger-500">
             <LogOut size={14} /> Sign out
           </button>

@@ -25,7 +25,7 @@ export interface ScanProgressState {
   fetched: number;
   toAnalyze: number;
   analyzed: number;
-  score?: number;
+  score?: number | null;
   error?: string;
   startedAt: number;
   updatedAt: number;
@@ -87,7 +87,7 @@ export function update(scanRunId: string, patch: Partial<ScanProgressState>) {
   store.set(`project:${next.projectId}`, next);
 }
 
-export function finish(scanRunId: string, score?: number) {
+export function finish(scanRunId: string, score?: number | null) {
   update(scanRunId, { stage: 'DONE', percent: 100, label: 'Selesai', score });
 }
 

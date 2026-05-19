@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import AppShell from '@/components/AppShell';
 import { X } from 'lucide-react';
 
 export default function NewProject() {
@@ -50,7 +49,7 @@ export default function NewProject() {
   }
 
   return (
-    <AppShell>
+    <>
       <h1 className="text-2xl font-semibold tracking-tight mb-1">New monitoring project</h1>
       <p className="text-sm text-ink-400 mb-6">Setelah dibuat, sistem akan mulai mengambil data nyata dari RSS dan halaman publik media Indonesia.</p>
 
@@ -72,7 +71,7 @@ export default function NewProject() {
               value={keywordInput}
               onChange={(e) => setKeywordInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addKeyword(); } }}
-              placeholder="cth: nama tokoh, brand, atau isu"
+              placeholder="cth: PDIP, Prabowo, Telkomsel, gojek"
             />
             <button type="button" className="btn-ghost" onClick={addKeyword}>Add</button>
           </div>
@@ -85,6 +84,13 @@ export default function NewProject() {
                 </button>
               </span>
             ))}
+          </div>
+          <div className="mt-2 text-xs text-ink-400 leading-relaxed">
+            💡 Gunakan keyword <strong>pendek &amp; umum</strong> (1-3 kata) yang biasa muncul di artikel berita. Tambahkan beberapa varian penulisan supaya cakupan lebih luas.
+            <br/>
+            Contoh untuk monitoring PDIP: <code className="text-accent-400">PDIP</code>, <code className="text-accent-400">PDI Perjuangan</code>, <code className="text-accent-400">Megawati</code>.
+            <br/>
+            Hindari frasa panjang seperti &quot;Partai PDIP Perjuangan&quot; karena tidak pernah ditulis utuh di berita.
           </div>
         </div>
 
@@ -102,6 +108,6 @@ export default function NewProject() {
           <button className="btn-primary" disabled={loading}>{loading ? 'Creating…' : 'Create project & scan'}</button>
         </div>
       </form>
-    </AppShell>
+    </>
   );
 }

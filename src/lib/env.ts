@@ -1,14 +1,26 @@
 /**
  * Centralized env access (with safe defaults).
- * Avoids scattered `process.env.X || '...'` across the codebase.
  */
 
 export const env = {
   databaseUrl: process.env.DATABASE_URL ?? '',
+
+  // ----- AI provider config -----
+  // AI_PROVIDER: "openai" | "groq" | "ollama" | "openrouter"
+  aiProvider: process.env.AI_PROVIDER ?? 'openai',
+  // Optional explicit model override; if empty, provider default is used.
+  aiModel: process.env.AI_MODEL ?? process.env.OPENAI_MODEL ?? '',
+
   openaiKey: process.env.OPENAI_API_KEY ?? '',
-  openaiModel: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
+  groqKey: process.env.GROQ_API_KEY ?? '',
+  openrouterKey: process.env.OPENROUTER_API_KEY ?? '',
+  ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434/v1',
+
+  // ----- Auth -----
   sessionPassword:
     process.env.SESSION_PASSWORD ?? 'change-me-to-a-random-32+character-string-please',
+
+  // ----- Crawler -----
   crawlerUserAgent:
     process.env.CRAWLER_USER_AGENT ??
     'ReputaScanBot/1.0 (+https://reputascan.id/bot; contact@reputascan.id)',
@@ -17,15 +29,24 @@ export const env = {
   crawlerMaxRetries: Number(process.env.CRAWLER_MAX_RETRIES ?? 2),
   scanCron: process.env.SCAN_CRON ?? '*/30 * * * *',
   maxArticlesPerSource: Number(process.env.MAX_ARTICLES_PER_SOURCE ?? 40),
+
+  // Legacy alias (kept for older code paths)
+  get openaiModel(): string {
+    return this.aiModel || 'gpt-4o-mini';
+  },
 };
 
 export function assertServerEnv() {
-  const required: Array<[string, string]> = [
-    ['DATABASE_URL', env.databaseUrl],
-    ['OPENAI_API_KEY', env.openaiKey],
-  ];
-  const missing = required.filter(([, v]) => !v).map(([k]) => k);
-  if (missing.length) {
-    throw new Error(`Missing required env vars: ${missing.join(', ')}`);
-  }
+  const missing: string[] = [];
+  if (!env.databaseUrl) missing.push('DATABASE_URL');
+
+  // At least one provider must be configured
+  const providerOk =
+    (env.aiProvider === 'openai' && env.openaiKey) ||
+    (env.aiProvider === 'groq' && env.groqKey) ||
+    (env.aiProvider === 'openrouter' && env.openrouterKey) ||
+    env.aiProvider === 'ollama';
+  if (!providerOk) missing.push(`AI provider creds (AI_PROVIDER=${env.aiProvider})`);
+
+  if (missing.length) throw new Error(`Missing required env vars: ${missing.join(', ')}`);
 }

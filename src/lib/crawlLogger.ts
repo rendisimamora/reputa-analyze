@@ -31,30 +31,34 @@ export async function logCrawl(params: LogParams): Promise<void> {
       },
     });
 
-    await prisma.sourceStat.upsert({
-      where: {
-        projectId_sourceKey: {
-          projectId: params.projectId ?? '',
-          sourceKey: params.sourceKey,
+    // SourceStat is per-project. Skip if we don't have a projectId
+    // (avoids cross-project leakage and NULL-compound-unique weirdness in Postgres).
+    if (params.projectId) {
+      await prisma.sourceStat.upsert({
+        where: {
+          projectId_sourceKey: {
+            projectId: params.projectId,
+            sourceKey: params.sourceKey,
+          },
         },
-      },
-      create: {
-        projectId: params.projectId ?? null,
-        sourceKey: params.sourceKey,
-        lastFetchedAt: new Date(),
-        lastStatus: params.status,
-        totalFetched: 1,
-        totalErrors: params.status === 'OK' ? 0 : 1,
-        lastError: params.status === 'OK' ? null : params.message,
-      },
-      update: {
-        lastFetchedAt: new Date(),
-        lastStatus: params.status,
-        totalFetched: { increment: 1 },
-        totalErrors: params.status === 'OK' ? undefined : { increment: 1 },
-        lastError: params.status === 'OK' ? null : params.message?.slice(0, 2000),
-      },
-    });
+        create: {
+          projectId: params.projectId,
+          sourceKey: params.sourceKey,
+          lastFetchedAt: new Date(),
+          lastStatus: params.status,
+          totalFetched: 1,
+          totalErrors: params.status === 'OK' ? 0 : 1,
+          lastError: params.status === 'OK' ? null : params.message?.slice(0, 2000),
+        },
+        update: {
+          lastFetchedAt: new Date(),
+          lastStatus: params.status,
+          totalFetched: { increment: 1 },
+          totalErrors: params.status === 'OK' ? undefined : { increment: 1 },
+          lastError: params.status === 'OK' ? null : params.message?.slice(0, 2000),
+        },
+      });
+    }
   } catch {
     // best-effort logging — swallow errors so the crawler never crashes on logging
   }

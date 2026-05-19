@@ -1,11 +1,11 @@
 /**
- * OpenAI-powered sentiment analyzer for Bahasa Indonesia.
- * Returns strict JSON output via response_format.
+ * AI-powered sentiment analyzer for Bahasa Indonesia.
+ * Works with any OpenAI-compatible provider: OpenAI, Groq, OpenRouter, Ollama.
  *
- * Only OpenAI is used here, and ONLY for sentiment analysis — as per spec.
+ * Strict JSON output. Robust against models that ignore response_format
+ * (we re-extract JSON from text on failure).
  */
-import { openai } from '@/lib/openai';
-import { env } from '@/lib/env';
+import { aiClient, aiModel, providerSupportsJsonMode } from '@/lib/aiClient';
 import type { SentimentResult } from '@/types';
 
 const SYSTEM = `Anda adalah analis sentimen media berbahasa Indonesia yang profesional.
@@ -24,13 +24,13 @@ Outputkan SELALU dalam JSON valid dengan skema persis berikut:
 }
 
 Aturan:
-- Skor harus konsisten: sentiment "negative" ⇒ sentimentScore < 0; "positive" ⇒ > 0.
+- Skor harus konsisten: sentiment "negative" => sentimentScore < 0; "positive" => > 0.
 - Bersikap akurat dan netral, bukan editorial.
 - Jika konten tidak relevan dengan subjek, tetap berikan analisis netral.
-- JANGAN tambahkan field lain. JANGAN gunakan markdown. HANYA JSON.`;
+- JANGAN tambahkan field lain. JANGAN gunakan markdown. HANYA JSON, tidak ada teks pembuka/penutup.`;
 
 interface AnalyzeInput {
-  subject?: string;            // optional: project name / keyword to anchor analysis
+  subject?: string;
   title: string;
   snippet?: string | null;
   rawContent?: string | null;
@@ -39,8 +39,20 @@ interface AnalyzeInput {
 }
 
 function truncate(s: string, n: number) {
-  if (s.length <= n) return s;
-  return s.slice(0, n) + '…';
+  return s.length <= n ? s : s.slice(0, n) + '…';
+}
+
+/** Try to extract the first JSON object from arbitrary text (handles markdown fences). */
+function extractJson(raw: string): Record<string, unknown> {
+  try { return JSON.parse(raw); } catch { /* fall through */ }
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced) { try { return JSON.parse(fenced[1]); } catch { /* */ } }
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start !== -1 && end > start) {
+    try { return JSON.parse(raw.slice(start, end + 1)); } catch { /* */ }
+  }
+  return {};
 }
 
 export async function analyzeSentiment(input: AnalyzeInput): Promise<SentimentResult> {
@@ -53,24 +65,18 @@ export async function analyzeSentiment(input: AnalyzeInput): Promise<SentimentRe
     content: truncate(input.rawContent ?? '', 6000),
   };
 
-  const completion = await openai().chat.completions.create({
-    model: env.openaiModel,
-    response_format: { type: 'json_object' },
+  const completion = await aiClient().chat.completions.create({
+    model: aiModel(),
+    ...(providerSupportsJsonMode() ? { response_format: { type: 'json_object' as const } } : {}),
     temperature: 0.2,
     messages: [
       { role: 'system', content: SYSTEM },
-      { role: 'user', content: JSON.stringify(userPayload) },
+      { role: 'user', content: `Artikel:\n${JSON.stringify(userPayload)}\n\nJawab HANYA dengan JSON sesuai skema.` },
     ],
   });
 
   const raw = completion.choices[0]?.message?.content ?? '{}';
-  let parsed: Record<string, unknown> = {};
-  try {
-    parsed = JSON.parse(raw) as Record<string, unknown>;
-  } catch {
-    parsed = {};
-  }
-
+  const parsed = extractJson(raw);
   return normalizeResult(parsed);
 }
 
@@ -90,7 +96,6 @@ function normalizeResult(r: Record<string, unknown>): SentimentResult {
   let score = Number(r.sentimentScore);
   if (Number.isNaN(score)) score = sentiment === 'POSITIVE' ? 0.5 : sentiment === 'NEGATIVE' ? -0.5 : 0;
   score = clamp(score, -1, 1);
-  // sanity: align sign with label
   if (sentiment === 'POSITIVE' && score < 0) score = Math.abs(score);
   if (sentiment === 'NEGATIVE' && score > 0) score = -Math.abs(score);
   if (sentiment === 'NEUTRAL' && Math.abs(score) > 0.4) score = score > 0 ? 0.2 : -0.2;
