@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useCallback, useEffect, useMemo, useState } from 'react';
+import { use, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CrawlStatusBadge } from '@/components/SentimentBadge';
 import { CrawlLogsSkeleton } from '@/components/PageSkeletons';
 import { ChevronLeft, ChevronRight, Loader2, RefreshCw, X } from 'lucide-react';
@@ -75,15 +75,21 @@ export default function CrawlLogsPage({ params }: { params: Promise<{ id: string
     [id, page, pageSize, filters],
   );
 
-  // initial load
+  // Guard against React StrictMode's intentional double-effect-invocation in dev.
+  // Refs persist across the double-mount so the second invocation is a no-op.
+  const didInit = useRef(false);
+
+  // initial load (runs exactly once even in StrictMode)
   useEffect(() => {
+    if (didInit.current) return;
+    didInit.current = true;
     void load({ isInitial: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // page / pageSize change
+  // page / pageSize change — only triggers AFTER initial load completed
   useEffect(() => {
-    if (logs === null) return; // first load handled above
+    if (!didInit.current || logs === null) return;
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pageSize]);
