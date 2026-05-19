@@ -1,0 +1,241 @@
+// ReputaScan ID - Prisma schema
+// PostgreSQL only (uses Json, citext-like behavior via standard text)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- AUTH ----------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  projects Project[]
+}
+
+// ---------- MONITORING ----------
+
+model Project {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  lastScanAt  DateTime?
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  keywords  Keyword[]
+  mentions  Mention[]
+  alerts    Alert[]
+  reports   Report[]
+  scans     ScanRun[]
+
+  @@index([userId])
+}
+
+model Keyword {
+  id        String   @id @default(cuid())
+  projectId String
+  term      String
+  // optional regex-like terms that ALL must appear OR ANY
+  matchMode MatchMode @default(ANY)
+  createdAt DateTime @default(now())
+
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@unique([projectId, term])
+}
+
+enum MatchMode {
+  ANY
+  ALL
+}
+
+// ---------- MENTIONS ----------
+
+model Mention {
+  id                String   @id @default(cuid())
+  projectId         String
+  sourceKey         String   // e.g. "detik", "kompas"
+  sourceName        String   // human-readable
+  title             String
+  snippet           String?  @db.Text
+  url               String
+  urlHash           String   // sha256 of canonicalized URL, for dedupe
+  contentHash       String?  // sha256 of title+snippet, for fuzzy dedupe
+  author            String?
+  publishedAt       DateTime?
+  rawContent        String?  @db.Text
+  matchedKeywords   String[] @default([])
+  collectionMethod  CollectionMethod
+  crawlStatus       CrawlStatus @default(OK)
+  crawlError        String?
+  createdAt         DateTime @default(now())
+
+  // sentiment fields (filled by analyzer)
+  sentiment         Sentiment?
+  sentimentScore    Float?    // -1 .. 1
+  emotion           String?
+  toxicity          Float?    // 0 .. 1
+  hateSpeech        Float?    // 0 .. 1
+  fakeNews          Float?    // 0 .. 1
+  topic             String?
+  aiSummary         String?   @db.Text
+  analyzedAt        DateTime?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, publishedAt])
+  @@index([projectId, sentiment])
+  @@index([projectId, sourceKey])
+  @@unique([projectId, urlHash])
+}
+
+enum CollectionMethod {
+  RSS
+  SEARCH_PAGE
+  ARTICLE_SCRAPE
+}
+
+enum CrawlStatus {
+  OK
+  RESTRICTED      // blocked by robots.txt / paywall / login
+  RATE_LIMITED
+  ERROR
+  PARTIAL         // had metadata but not full content
+}
+
+enum Sentiment {
+  POSITIVE
+  NEUTRAL
+  NEGATIVE
+}
+
+// ---------- SOURCES (for health tracking) ----------
+
+model SourceStat {
+  id            String   @id @default(cuid())
+  projectId     String?
+  sourceKey     String
+  lastFetchedAt DateTime?
+  lastStatus    CrawlStatus @default(OK)
+  totalFetched  Int      @default(0)
+  totalErrors   Int      @default(0)
+  lastError     String?
+
+  @@unique([projectId, sourceKey])
+  @@index([sourceKey])
+}
+
+// ---------- CRAWL LOGS ----------
+
+model CrawlLog {
+  id          String   @id @default(cuid())
+  projectId   String?
+  sourceKey   String
+  method      CollectionMethod
+  url         String
+  status      CrawlStatus
+  httpStatus  Int?
+  message     String?  @db.Text
+  durationMs  Int?
+  createdAt   DateTime @default(now())
+
+  @@index([projectId, createdAt])
+  @@index([sourceKey, createdAt])
+}
+
+// ---------- SCAN RUNS ----------
+
+model ScanRun {
+  id           String   @id @default(cuid())
+  projectId    String
+  trigger      ScanTrigger
+  startedAt    DateTime @default(now())
+  finishedAt   DateTime?
+  fetched      Int      @default(0)
+  newMentions  Int      @default(0)
+  analyzed     Int      @default(0)
+  errors       Int      @default(0)
+  status       ScanStatus @default(RUNNING)
+  message      String?  @db.Text
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, startedAt])
+}
+
+enum ScanTrigger {
+  MANUAL
+  CRON
+  ON_CREATE
+}
+
+enum ScanStatus {
+  RUNNING
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
+// ---------- ALERTS ----------
+
+model Alert {
+  id         String   @id @default(cuid())
+  projectId  String
+  type       AlertType
+  severity   AlertSeverity
+  title      String
+  message    String   @db.Text
+  payload    Json?
+  acknowledged Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+}
+
+enum AlertType {
+  NEGATIVE_SPIKE
+  HIGH_TOXICITY
+  REPUTATION_DROP
+  CREDIBLE_NEGATIVE
+  MULTI_SOURCE_NEGATIVE
+}
+
+enum AlertSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+// ---------- REPORTS ----------
+
+model Report {
+  id         String   @id @default(cuid())
+  projectId  String
+  title      String
+  rangeFrom  DateTime
+  rangeTo    DateTime
+  payload    Json     // full computed report data
+  createdAt  DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+}

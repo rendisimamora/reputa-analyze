@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html, body {
+  background: radial-gradient(1200px 600px at 10% -10%, rgba(52, 194, 255, 0.06), transparent 60%),
+              radial-gradient(900px 500px at 110% 10%, rgba(124, 220, 255, 0.05), transparent 60%),
+              #070914;
+  color: #e9ecf4;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.scrollbar::-webkit-scrollbar { height: 8px; width: 8px; }
+.scrollbar::-webkit-scrollbar-thumb { background: rgba(155, 166, 192, 0.2); border-radius: 8px; }
+.scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(155, 166, 192, 0.4); }
+
+.card {
+  @apply rounded-xl border border-ink-700/60 bg-ink-800/60 backdrop-blur shadow-[0_1px_0_rgba(255,255,255,0.04)_inset];
+}
+
+.card-glow {
+  @apply rounded-xl border border-accent-500/30 bg-ink-800/70 shadow-glow;
+}
+
+.btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition;
+}
+.btn-primary {
+  @apply btn bg-accent-500 text-ink-950 hover:bg-accent-400 disabled:opacity-50 disabled:cursor-not-allowed;
+}
+.btn-ghost {
+  @apply btn border border-ink-700 text-ink-100 hover:bg-ink-700/50;
+}
+.btn-danger {
+  @apply btn bg-danger-500/90 text-white hover:bg-danger-500;
+}
+
+.input {
+  @apply w-full rounded-lg border border-ink-700 bg-ink-900/60 px-3 py-2 text-sm text-ink-100 placeholder:text-ink-400 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500/40;
+}
+
+.label {
+  @apply mb-1 block text-xs font-medium uppercase tracking-wide text-ink-300;
+}
+
+.chip {
+  @apply inline-flex items-center gap-1 rounded-full border border-ink-700 bg-ink-900/60 px-2.5 py-0.5 text-xs text-ink-200;
+}
+
+table.dt th, table.dt td {
+  @apply text-left text-sm;
+}
+table.dt th {
+  @apply bg-ink-900/60 px-3 py-2 font-medium text-ink-300 border-b border-ink-700;
+}
+table.dt td {
+  @apply px-3 py-2 border-b border-ink-800;
+}
