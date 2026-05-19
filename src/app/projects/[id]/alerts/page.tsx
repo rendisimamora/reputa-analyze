@@ -3,6 +3,7 @@
 import { use, useEffect, useState } from 'react';
 import { clsx } from 'clsx';
 import { Bell, Check } from 'lucide-react';
+import { AlertsSkeleton } from '@/components/PageSkeletons';
 
 interface Alert {
   id: string;
@@ -16,7 +17,7 @@ interface Alert {
 
 export default function AlertsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [alerts, setAlerts] = useState<Alert[] | null>(null);
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, []);
 
   async function load() {
@@ -33,6 +34,8 @@ export default function AlertsPage({ params }: { params: Promise<{ id: string }>
     });
     void load();
   }
+
+  if (alerts === null) return <AlertsSkeleton />;
 
   return (
     <>

@@ -1,11 +1,18 @@
 import AppShell from '@/components/AppShell';
+import { RouteProgress } from '@/components/RouteProgress';
 
 /**
- * Layout that wraps all /projects/* routes.
- * AppShell mounts here ONCE — navigating between Dashboard / Mentions / Alerts /
- * Report / Crawl Logs keeps the sidebar (and its project list) intact instead of
- * re-fetching on every page transition.
+ * Layout wraps all /projects/* routes.
+ * AppShell + RouteProgress mount ONCE — navigating between Dashboard / Mentions /
+ * Alerts / Report / Crawl Logs keeps the sidebar intact and only swaps the
+ * right-side content. A top progress bar appears during the transition so the
+ * user gets immediate visual feedback (SPA / PWA feel).
  */
 export default function ProjectsLayout({ children }: { children: React.ReactNode }) {
-  return <AppShell>{children}</AppShell>;
+  return (
+    <>
+      <RouteProgress />
+      <AppShell>{children}</AppShell>
+    </>
+  );
 }

@@ -9,8 +9,13 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="id" className="dark">
-      <body>{children}</body>
+    <html lang="id" className="dark" suppressHydrationWarning>
+      {/*
+        suppressHydrationWarning di <body> wajib karena beberapa browser extension
+        (ColorZilla, Grammarly, LastPass, dll) menyisipkan atribut ke <body>
+        SEBELUM React hydrate — itu hanya menyentuh node ini, bukan turunannya.
+      */}
+      <body suppressHydrationWarning>{children}</body>
     </html>
   );
 }

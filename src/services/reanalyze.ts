@@ -10,6 +10,7 @@ import { prisma } from '@/lib/prisma';
 import { analyzeSentiment } from './sentimentAnalyzer';
 import { computeReputation } from './reputationScore';
 import { evaluateAlerts } from './alertEngine';
+import { regenerateAiSummary } from './aiSummary';
 
 export interface ReanalyzeResult {
   total: number;
@@ -79,6 +80,13 @@ export async function reanalyzeProject(projectId: string): Promise<ReanalyzeResu
     where: { id: projectId },
     data: { lastScanAt: new Date() },
   });
+
+  // Refresh cached AI summary if we produced any new analyzed data
+  if (analyzed > 0) {
+    await regenerateAiSummary(projectId).catch((e) => {
+      console.warn('[reanalyze] AI summary regen failed:', e instanceof Error ? e.message : e);
+    });
+  }
 
   return {
     total: pending.length,

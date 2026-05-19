@@ -15,6 +15,7 @@ import { collectAll } from './collector';
 import { analyzeSentiment } from './sentimentAnalyzer';
 import { computeReputation } from './reputationScore';
 import { evaluateAlerts } from './alertEngine';
+import { regenerateAiSummary } from './aiSummary';
 import { env } from '@/lib/env';
 import * as progress from './scanProgress';
 import type { ScanTrigger } from '@prisma/client';
@@ -210,6 +211,14 @@ async function executeScan(
     const all = await prisma.mention.findMany({ where: { projectId } });
     const rep = computeReputation(all);
     await evaluateAlerts(projectId, rep.score);
+
+    // Regenerate AI summary once per scan (only if we got new analyzed data)
+    if (analyzed > 0) {
+      progress.update(scanRunId, { label: 'Membuat AI executive summary…' });
+      await regenerateAiSummary(projectId).catch((e) => {
+        console.warn('[scanRunner] AI summary regen failed:', e instanceof Error ? e.message : e);
+      });
+    }
 
     await prisma.project.update({
       where: { id: projectId },

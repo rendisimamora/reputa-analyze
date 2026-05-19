@@ -2,20 +2,21 @@ import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireUser } from '@/lib/auth';
 import { handleApi, jsonError, jsonOk } from '@/lib/apiHelpers';
-import { getDashboardSnapshot } from '@/services/insights';
+import { regenerateAiSummary } from '@/services/aiSummary';
 
 interface Ctx { params: Promise<{ id: string }> }
 
-export async function GET(req: NextRequest, ctx: Ctx) {
+/** POST = force-regenerate the cached AI executive summary for this project. */
+export async function POST(_req: NextRequest, ctx: Ctx) {
   return handleApi(async () => {
     const user = await requireUser();
     const { id } = await ctx.params;
     const project = await prisma.project.findUnique({ where: { id } });
     if (!project || project.userId !== user.id) return jsonError('Not found', 404);
-
-    // AI summary is always read from DB cache (kept in sync by scan/reanalyze).
-    // The `ai` query flag is kept for backwards-compat but is now a no-op.
-    const snapshot = await getDashboardSnapshot(id);
-    return jsonOk(snapshot);
+    const result = await regenerateAiSummary(id);
+    if (result.error) {
+      return jsonError(`Regenerate gagal: ${result.error}`, 502, { result });
+    }
+    return jsonOk(result);
   });
 }

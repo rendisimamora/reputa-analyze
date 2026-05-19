@@ -20,7 +20,7 @@ interface DashboardData {
   topNegativeIssues: Array<{ topic: string; count: number }>;
   sourceHealth: Array<{ sourceKey: string; lastStatus: string; lastFetchedAt: string | null; errors: number }>;
   recent: Array<{ id: string; title: string; url: string; sourceName: string; publishedAt: string | null; sentiment: string | null; sentimentScore: number | null }>;
-  aiSummary?: { executive: string; recommendation: string };
+  aiSummary?: { executive: string; recommendation: string; generatedAt: string | null };
 }
 
 export default function ProjectDashboard({ params }: { params: Promise<{ id: string }> }) {
@@ -30,6 +30,7 @@ export default function ProjectDashboard({ params }: { params: Promise<{ id: str
   const [error, setError] = useState<string | null>(null);
   const [reanalyzing, setReanalyzing] = useState(false);
   const [reanalyzeMsg, setReanalyzeMsg] = useState<string | null>(null);
+  const [regenSummary, setRegenSummary] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const load = useCallback(async (withAi = false) => {
@@ -97,6 +98,16 @@ export default function ProjectDashboard({ params }: { params: Promise<{ id: str
       totalSources: 16, sourcesDone: 0, fetched: 0, toAnalyze: 0, analyzed: 0,
     });
     startPolling(scanRunId);
+  }
+
+  async function regenerateSummary() {
+    setRegenSummary(true);
+    try {
+      const r = await fetch(`/api/projects/${id}/summary`, { method: 'POST' });
+      if (r.ok) await load(false);
+    } finally {
+      setRegenSummary(false);
+    }
   }
 
   async function reanalyze() {
@@ -196,7 +207,27 @@ export default function ProjectDashboard({ params }: { params: Promise<{ id: str
 
       {data?.aiSummary && (data.aiSummary.executive || data.aiSummary.recommendation) && (
         <div className="card p-5 mb-6">
-          <div className="flex items-center gap-2 text-sm text-accent-400 mb-2"><BrainCircuit size={16}/> AI Executive Summary</div>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2 text-sm text-accent-400">
+              <BrainCircuit size={16}/> AI Executive Summary
+            </div>
+            <div className="flex items-center gap-3">
+              {data.aiSummary.generatedAt && (
+                <span className="text-[11px] text-ink-500" title="Disimpan di DB sejak generate terakhir — tidak hit AI tiap load.">
+                  Cached · {new Date(data.aiSummary.generatedAt).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })}
+                </span>
+              )}
+              <button
+                onClick={regenerateSummary}
+                disabled={regenSummary}
+                className="text-xs text-ink-300 hover:text-accent-400 inline-flex items-center gap-1 disabled:opacity-50"
+                title="Generate ulang summary menggunakan AI"
+              >
+                <RefreshCw size={12} className={regenSummary ? 'animate-spin' : ''}/>
+                {regenSummary ? 'Generating…' : 'Regenerate'}
+              </button>
+            </div>
+          </div>
           <p className="text-sm text-ink-100 leading-relaxed">{data.aiSummary.executive}</p>
           {data.aiSummary.recommendation && (
             <>

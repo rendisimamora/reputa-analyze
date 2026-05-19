@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState } from 'react';
 import { CrawlStatusBadge } from '@/components/SentimentBadge';
+import { CrawlLogsSkeleton } from '@/components/PageSkeletons';
 
 interface CrawlLog {
   id: string;
@@ -17,10 +18,12 @@ interface CrawlLog {
 
 export default function CrawlLogsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const [logs, setLogs] = useState<CrawlLog[]>([]);
+  const [logs, setLogs] = useState<CrawlLog[] | null>(null);
   useEffect(() => {
     fetch(`/api/projects/${id}/crawl-logs?take=300`).then((r) => r.json()).then((d) => setLogs(d.logs ?? []));
   }, [id]);
+
+  if (logs === null) return <CrawlLogsSkeleton />;
 
   return (
     <>
@@ -34,7 +37,7 @@ export default function CrawlLogsPage({ params }: { params: Promise<{ id: string
               <tr><th>Time</th><th>Source</th><th>Method</th><th>Status</th><th>HTTP</th><th>Duration</th><th>URL</th><th>Message</th></tr>
             </thead>
             <tbody>
-              {logs.length === 0 && <tr><td colSpan={8} className="text-center text-ink-400 py-6">No logs.</td></tr>}
+              {logs.length === 0 && <tr><td colSpan={8} className="text-center text-ink-400 py-6">Belum ada log crawl. Jalankan scan dulu.</td></tr>}
               {logs.map((l) => (
                 <tr key={l.id}>
                   <td className="whitespace-nowrap text-ink-300">{new Date(l.createdAt).toLocaleString('id-ID')}</td>

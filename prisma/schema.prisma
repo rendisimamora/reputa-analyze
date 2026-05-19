@@ -35,6 +35,14 @@ model Project {
   updatedAt   DateTime @updatedAt
   lastScanAt  DateTime?
 
+  // Cached AI executive summary — regenerated after each scan/reanalyze that
+  // produces new analyzed mentions. Dashboard reads from here instead of
+  // calling the LLM on every load.
+  aiExecutive       String?   @db.Text
+  aiRecommendation  String?   @db.Text
+  aiSummaryAt       DateTime?
+  aiSummaryError    String?   @db.Text
+
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   keywords  Keyword[]
   mentions  Mention[]
