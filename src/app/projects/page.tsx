@@ -6,6 +6,7 @@ import { ArrowRight, Loader2, Radar, Trash2 } from 'lucide-react';
 
 interface Project {
   id: string;
+  slug: string;
   name: string;
   description: string | null;
   lastScanAt: string | null;
@@ -33,17 +34,17 @@ export default function ProjectsList() {
 
   useEffect(() => { void load(); }, [load]);
 
-  async function deleteProject(id: string) {
-    setDeletingId(id);
+  async function deleteProject(slug: string) {
+    setDeletingId(slug);
     setError(null);
     try {
-      const r = await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+      const r = await fetch(`/api/projects/${slug}`, { method: 'DELETE' });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
         setError(j.error ?? 'Gagal menghapus project');
         return;
       }
-      setProjects((cur) => (cur ? cur.filter((p) => p.id !== id) : cur));
+      setProjects((cur) => (cur ? cur.filter((p) => p.slug !== slug) : cur));
       setConfirmId(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Gagal menghapus project');
@@ -96,12 +97,12 @@ export default function ProjectsList() {
       ) : (
         <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
           {projects.map((p) => {
-            const isDeleting = deletingId === p.id;
-            const askConfirm = confirmId === p.id;
+            const isDeleting = deletingId === p.slug;
+            const askConfirm = confirmId === p.slug;
             return (
               <Link
                 key={p.id}
-                href={`/projects/${p.id}`}
+                href={`/projects/${p.slug}`}
                 className="card hover:border-accent-500/40 transition p-5 group block relative"
               >
                 {/* Unacknowledged alerts indicator — pulsing red dot at top-left of card */}
@@ -122,7 +123,7 @@ export default function ProjectsList() {
                       <button
                         type="button"
                         title="Hapus project"
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmId(p.id); }}
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmId(p.slug); }}
                         className="opacity-0 group-hover:opacity-100 transition text-ink-400 hover:text-danger-500 p-1 rounded hover:bg-ink-800/80"
                       >
                         <Trash2 size={14} />
@@ -180,7 +181,7 @@ export default function ProjectsList() {
                         </button>
                         <button
                           type="button"
-                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); deleteProject(p.id); }}
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); deleteProject(p.slug); }}
                           className="text-xs px-3 py-1.5 rounded-md bg-danger-500/90 hover:bg-danger-500 text-white inline-flex items-center gap-1"
                         >
                           <Trash2 size={12}/> Hapus

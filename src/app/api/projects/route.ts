@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { requireUser } from '@/lib/auth';
 import { handleApi, jsonError, jsonOk } from '@/lib/apiHelpers';
+import { generateUniqueProjectSlug } from '@/lib/slug';
 
 const CreateBody = z.object({
   name: z.string().min(2).max(120),
@@ -20,8 +21,6 @@ export async function GET() {
       orderBy: { updatedAt: 'desc' },
     });
 
-    // Tally unacknowledged alerts in a single grouped query so we can show a
-    // red notification badge on cards that need attention.
     const unack = await prisma.alert.groupBy({
       by: ['projectId'],
       where: { projectId: { in: projects.map((p) => p.id) }, acknowledged: false },
@@ -44,9 +43,13 @@ export async function POST(req: NextRequest) {
     const parsed = CreateBody.safeParse(await req.json().catch(() => ({})));
     if (!parsed.success) return jsonError('Invalid body', 400, { issues: parsed.error.flatten() });
 
+    // Auto-generate slug from name. Per-user unique, immutable after this point.
+    const slug = await generateUniqueProjectSlug(user.id, parsed.data.name);
+
     const project = await prisma.project.create({
       data: {
         userId: user.id,
+        slug,
         name: parsed.data.name,
         description: parsed.data.description,
         keywords: {

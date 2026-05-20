@@ -44,8 +44,8 @@ export default function NewProject() {
     }
     const { project } = await r.json();
     // Trigger first scan in background; user can navigate immediately
-    fetch(`/api/projects/${project.id}/scan`, { method: 'POST' }).catch(() => {});
-    router.push(`/projects/${project.id}`);
+    fetch(`/api/projects/${project.slug}/scan`, { method: 'POST' }).catch(() => {});
+    router.push(`/projects/${project.slug}`);
   }
 
   return (

@@ -16,3 +16,6 @@ prisma/migrations/dev.db*
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
+
+# Backup files (sed/editor temp)
+*.bak

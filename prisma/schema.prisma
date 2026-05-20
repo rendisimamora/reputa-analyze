@@ -1,5 +1,5 @@
-// ReputaScan ID - Prisma schema
-// PostgreSQL only (uses Json, citext-like behavior via standard text)
+// ReputaScan ID - Prisma schema (UUIDv7 + slug routing)
+// PostgreSQL only
 
 generator client {
   provider = "prisma-client-js"
@@ -13,7 +13,7 @@ datasource db {
 // ---------- AUTH ----------
 
 model User {
-  id           String   @id @default(cuid())
+  id           String   @id @default(uuid(7)) @db.Uuid
   email        String   @unique
   passwordHash String
   name         String?
@@ -26,8 +26,13 @@ model User {
 // ---------- MONITORING ----------
 
 model Project {
-  id          String   @id @default(cuid())
-  userId      String
+  id          String   @id @default(uuid(7)) @db.Uuid
+  userId      String   @db.Uuid
+
+  // URL identifier: lowercase-hyphenated, per-user unique, immutable after create.
+  // Routes use slug; foreign keys keep using UUID `id`.
+  slug        String
+
   name        String
   description String?
   active      Boolean  @default(true)
@@ -54,15 +59,15 @@ model Project {
   reports   Report[]
   scans     ScanRun[]
 
+  @@unique([userId, slug])
   @@index([userId])
   @@index([deletedAt])
 }
 
 model Keyword {
-  id        String   @id @default(cuid())
-  projectId String
+  id        String   @id @default(uuid(7)) @db.Uuid
+  projectId String   @db.Uuid
   term      String
-  // optional regex-like terms that ALL must appear OR ANY
   matchMode MatchMode @default(ANY)
   createdAt DateTime @default(now())
 
@@ -80,15 +85,15 @@ enum MatchMode {
 // ---------- MENTIONS ----------
 
 model Mention {
-  id                String   @id @default(cuid())
-  projectId         String
-  sourceKey         String   // e.g. "detik", "kompas"
-  sourceName        String   // human-readable
+  id                String   @id @default(uuid(7)) @db.Uuid
+  projectId         String   @db.Uuid
+  sourceKey         String
+  sourceName        String
   title             String
   snippet           String?  @db.Text
   url               String
-  urlHash           String   // sha256 of canonicalized URL, for dedupe
-  contentHash       String?  // sha256 of title+snippet, for fuzzy dedupe
+  urlHash           String
+  contentHash       String?
   author            String?
   publishedAt       DateTime?
   rawContent        String?  @db.Text
@@ -98,13 +103,12 @@ model Mention {
   crawlError        String?
   createdAt         DateTime @default(now())
 
-  // sentiment fields (filled by analyzer)
   sentiment         Sentiment?
-  sentimentScore    Float?    // -1 .. 1
+  sentimentScore    Float?
   emotion           String?
-  toxicity          Float?    // 0 .. 1
-  hateSpeech        Float?    // 0 .. 1
-  fakeNews          Float?    // 0 .. 1
+  toxicity          Float?
+  hateSpeech        Float?
+  fakeNews          Float?
   topic             String?
   aiSummary         String?   @db.Text
   analyzedAt        DateTime?
@@ -125,10 +129,10 @@ enum CollectionMethod {
 
 enum CrawlStatus {
   OK
-  RESTRICTED      // blocked by robots.txt / paywall / login
+  RESTRICTED
   RATE_LIMITED
   ERROR
-  PARTIAL         // had metadata but not full content
+  PARTIAL
 }
 
 enum Sentiment {
@@ -137,11 +141,11 @@ enum Sentiment {
   NEGATIVE
 }
 
-// ---------- SOURCES (for health tracking) ----------
+// ---------- SOURCES ----------
 
 model SourceStat {
-  id            String   @id @default(cuid())
-  projectId     String?
+  id            String   @id @default(uuid(7)) @db.Uuid
+  projectId     String?  @db.Uuid
   sourceKey     String
   lastFetchedAt DateTime?
   lastStatus    CrawlStatus @default(OK)
@@ -156,8 +160,8 @@ model SourceStat {
 // ---------- CRAWL LOGS ----------
 
 model CrawlLog {
-  id          String   @id @default(cuid())
-  projectId   String?
+  id          String   @id @default(uuid(7)) @db.Uuid
+  projectId   String?  @db.Uuid
   sourceKey   String
   method      CollectionMethod
   url         String
@@ -174,8 +178,8 @@ model CrawlLog {
 // ---------- SCAN RUNS ----------
 
 model ScanRun {
-  id           String   @id @default(cuid())
-  projectId    String
+  id           String   @id @default(uuid(7)) @db.Uuid
+  projectId    String   @db.Uuid
   trigger      ScanTrigger
   startedAt    DateTime @default(now())
   finishedAt   DateTime?
@@ -207,8 +211,8 @@ enum ScanStatus {
 // ---------- ALERTS ----------
 
 model Alert {
-  id         String   @id @default(cuid())
-  projectId  String
+  id         String   @id @default(uuid(7)) @db.Uuid
+  projectId  String   @db.Uuid
   type       AlertType
   severity   AlertSeverity
   title      String
@@ -240,12 +244,12 @@ enum AlertSeverity {
 // ---------- REPORTS ----------
 
 model Report {
-  id         String   @id @default(cuid())
-  projectId  String
+  id         String   @id @default(uuid(7)) @db.Uuid
+  projectId  String   @db.Uuid
   title      String
   rangeFrom  DateTime
   rangeTo    DateTime
-  payload    Json     // full computed report data
+  payload    Json
   createdAt  DateTime @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)

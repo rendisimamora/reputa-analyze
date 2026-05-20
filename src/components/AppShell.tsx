@@ -19,7 +19,8 @@ import {
 import { clsx } from 'clsx';
 
 interface Project {
-  id: string;
+  id: string;     // UUID — internal only
+  slug: string;   // public identifier used in URLs and event matching
   name: string;
   unacknowledgedAlerts?: number;
 }
@@ -27,10 +28,11 @@ interface Project {
 interface User { id: string; email: string; name: string | null }
 
 export default function AppShell({
-  projectId: projectIdProp,
+  projectSlug: projectSlugProp,
   children,
 }: {
-  projectId?: string;
+  /** Optional override. Normally derived from pathname so the shell can sit in a layout. */
+  projectSlug?: string;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -40,14 +42,14 @@ export default function AppShell({
   const [open, setOpen] = useState(false);
   const ddRef = useRef<HTMLDivElement>(null);
 
-  // Derive projectId from /projects/<id>(/...)? so the shell can sit in a layout
-  const derivedProjectId = (() => {
+  // Derive slug from /projects/<slug>(/...)? — `[slug]` segment value.
+  const derivedSlug = (() => {
     const m = pathname.match(/^\/projects\/([^/]+)/);
     if (!m) return undefined;
     if (m[1] === 'new') return undefined;
     return m[1];
   })();
-  const projectId = projectIdProp ?? derivedProjectId;
+  const projectSlug = projectSlugProp ?? derivedSlug;
 
   useEffect(() => {
     (async () => {
@@ -60,28 +62,26 @@ export default function AppShell({
   }, [router]);
 
   // Listen for in-app events from other pages so the sidebar stays in sync
-  // WITHOUT extra GET /api/projects round trips:
-  //   - project-updated: Settings page saved name/description/active
-  //   - project-deleted: Settings or project-card delete
-  //   - alerts-changed:  Alerts page acknowledged something (changes badge count)
+  // WITHOUT extra GET /api/projects round trips. All events use `slug` as the
+  // identifier (matches what URLs and routes use).
   useEffect(() => {
     const onUpdated = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { id: string; name?: string; description?: string | null; active?: boolean };
-      if (!detail?.id) return;
+      const detail = (e as CustomEvent).detail as { slug: string; name?: string; description?: string | null; active?: boolean };
+      if (!detail?.slug) return;
       setProjects((cur) =>
-        cur ? cur.map((p) => (p.id === detail.id ? { ...p, ...(detail.name !== undefined ? { name: detail.name } : {}) } : p)) : cur,
+        cur ? cur.map((p) => (p.slug === detail.slug ? { ...p, ...(detail.name !== undefined ? { name: detail.name } : {}) } : p)) : cur,
       );
     };
     const onDeleted = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { id: string };
-      if (!detail?.id) return;
-      setProjects((cur) => (cur ? cur.filter((p) => p.id !== detail.id) : cur));
+      const detail = (e as CustomEvent).detail as { slug: string };
+      if (!detail?.slug) return;
+      setProjects((cur) => (cur ? cur.filter((p) => p.slug !== detail.slug) : cur));
     };
     const onAlertsChanged = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { id: string; unacknowledgedAlerts: number };
-      if (!detail?.id) return;
+      const detail = (e as CustomEvent).detail as { slug: string; unacknowledgedAlerts: number };
+      if (!detail?.slug) return;
       setProjects((cur) =>
-        cur ? cur.map((p) => (p.id === detail.id ? { ...p, unacknowledgedAlerts: detail.unacknowledgedAlerts } : p)) : cur,
+        cur ? cur.map((p) => (p.slug === detail.slug ? { ...p, unacknowledgedAlerts: detail.unacknowledgedAlerts } : p)) : cur,
       );
     };
     window.addEventListener('reputascan:project-updated', onUpdated);
@@ -114,17 +114,17 @@ export default function AppShell({
     router.push('/login');
   }
 
-  const currentProject = projects?.find((p) => p.id === projectId) ?? null;
+  const currentProject = projects?.find((p) => p.slug === projectSlug) ?? null;
   const currentUnack = currentProject?.unacknowledgedAlerts ?? 0;
 
-  const nav = projectId
+  const nav = projectSlug
     ? [
-        { href: `/projects/${projectId}`, label: 'Dashboard', icon: BarChart3, badge: 0 },
-        { href: `/projects/${projectId}/mentions`, label: 'Mentions', icon: Search, badge: 0 },
-        { href: `/projects/${projectId}/alerts`, label: 'Alerts', icon: Bell, badge: currentUnack },
-        { href: `/projects/${projectId}/report`, label: 'Report', icon: FileText, badge: 0 },
-        { href: `/projects/${projectId}/crawl`, label: 'Crawl Logs', icon: Activity, badge: 0 },
-        { href: `/projects/${projectId}/settings`, label: 'Settings', icon: Settings, badge: 0 },
+        { href: `/projects/${projectSlug}`, label: 'Dashboard', icon: BarChart3, badge: 0 },
+        { href: `/projects/${projectSlug}/mentions`, label: 'Mentions', icon: Search, badge: 0 },
+        { href: `/projects/${projectSlug}/alerts`, label: 'Alerts', icon: Bell, badge: currentUnack },
+        { href: `/projects/${projectSlug}/report`, label: 'Report', icon: FileText, badge: 0 },
+        { href: `/projects/${projectSlug}/crawl`, label: 'Crawl Logs', icon: Activity, badge: 0 },
+        { href: `/projects/${projectSlug}/settings`, label: 'Settings', icon: Settings, badge: 0 },
       ]
     : [];
 
@@ -175,12 +175,12 @@ export default function AppShell({
                       <div className="text-xs text-ink-500 px-3 py-3 italic">Belum ada project.</div>
                     ) : (
                       projects.map((p) => {
-                        const active = p.id === projectId;
+                        const active = p.slug === projectSlug;
                         const unack = p.unacknowledgedAlerts ?? 0;
                         return (
                           <Link
                             key={p.id}
-                            href={`/projects/${p.id}`}
+                            href={`/projects/${p.slug}`}
                             onClick={() => setOpen(false)}
                             className={clsx(
                               'flex items-center justify-between gap-2 px-3 py-2 text-sm truncate',
