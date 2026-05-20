@@ -11,3 +11,8 @@ dist
 coverage
 .prisma
 prisma/migrations/dev.db*
+
+# Lock files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
