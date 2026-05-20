@@ -35,6 +35,10 @@ model Project {
   updatedAt   DateTime @updatedAt
   lastScanAt  DateTime?
 
+  // Soft delete: when set, project is hidden from lists & blocked from access.
+  // Data (mentions, alerts, scans, reports) is preserved.
+  deletedAt   DateTime?
+
   // Cached AI executive summary — regenerated after each scan/reanalyze that
   // produces new analyzed mentions. Dashboard reads from here instead of
   // calling the LLM on every load.
@@ -51,6 +55,7 @@ model Project {
   scans     ScanRun[]
 
   @@index([userId])
+  @@index([deletedAt])
 }
 
 model Keyword {

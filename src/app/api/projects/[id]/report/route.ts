@@ -12,7 +12,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   return handleApi(async () => {
     const user = await requireUser();
     const { id } = await ctx.params;
-    const project = await prisma.project.findUnique({ where: { id } });
+    const project = await prisma.project.findFirst({ where: { id, deletedAt: null } });
     if (!project || project.userId !== user.id) return jsonError('Not found', 404);
 
     const body = (await req.json().catch(() => ({}))) as { from?: string; to?: string };
@@ -40,7 +40,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
   return handleApi(async () => {
     const user = await requireUser();
     const { id } = await ctx.params;
-    const project = await prisma.project.findUnique({ where: { id } });
+    const project = await prisma.project.findFirst({ where: { id, deletedAt: null } });
     if (!project || project.userId !== user.id) return jsonError('Not found', 404);
     const reports = await prisma.report.findMany({
       where: { projectId: id },

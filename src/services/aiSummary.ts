@@ -34,8 +34,8 @@ interface ProjectShape {
  *  - LLM errors                -> stores aiSummaryError, keeps last good summary
  */
 export async function regenerateAiSummary(projectId: string): Promise<CachedAiSummary> {
-  const project = await prisma.project.findUnique({ where: { id: projectId } });
-  if (!project) throw new Error('Project not found');
+  const project = await prisma.project.findFirst({ where: { id: projectId, deletedAt: null } });
+  if (!project) throw new Error('Project not found or has been deleted');
 
   // No provider configured -> store deterministic placeholder
   if (!hasAiConfigured()) {

@@ -10,8 +10,8 @@ async function main() {
   assertServerEnv();
   const arg = process.argv[2];
   const projects = arg
-    ? await prisma.project.findMany({ where: { id: arg } })
-    : await prisma.project.findMany({ where: { active: true } });
+    ? await prisma.project.findMany({ where: { id: arg, deletedAt: null } })
+    : await prisma.project.findMany({ where: { active: true, deletedAt: null } });
   if (!projects.length) {
     console.log('No matching projects.');
     return;

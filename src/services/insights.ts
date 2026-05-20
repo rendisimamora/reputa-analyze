@@ -28,8 +28,8 @@ function dayKey(d: Date): string {
 }
 
 export async function getDashboardSnapshot(projectId: string, opts?: { includeAi?: boolean }): Promise<DashboardSnapshot> {
-  const project = await prisma.project.findUnique({ where: { id: projectId } });
-  if (!project) throw new Error('Project not found');
+  const project = await prisma.project.findFirst({ where: { id: projectId, deletedAt: null } });
+  if (!project) throw new Error('Project not found or has been deleted');
 
   const mentions = await prisma.mention.findMany({
     where: { projectId },

@@ -21,8 +21,8 @@ export interface ReanalyzeResult {
 }
 
 export async function reanalyzeProject(projectId: string): Promise<ReanalyzeResult> {
-  const project = await prisma.project.findUnique({ where: { id: projectId } });
-  if (!project) throw new Error('Project not found');
+  const project = await prisma.project.findFirst({ where: { id: projectId, deletedAt: null } });
+  if (!project) throw new Error('Project not found or has been deleted');
 
   const pending = await prisma.mention.findMany({
     where: { projectId, analyzedAt: null, crawlStatus: { in: ['OK', 'PARTIAL'] } },

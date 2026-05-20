@@ -14,7 +14,7 @@ import { env, assertServerEnv } from '@/lib/env';
 import { runScan } from '@/services/scanRunner';
 
 async function scanAllActive() {
-  const projects = await prisma.project.findMany({ where: { active: true } });
+  const projects = await prisma.project.findMany({ where: { active: true, deletedAt: null } });
   console.log(`[scheduler] tick — ${projects.length} active project(s)`);
   for (const p of projects) {
     try {

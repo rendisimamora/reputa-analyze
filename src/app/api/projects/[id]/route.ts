@@ -13,8 +13,10 @@ const UpdateBody = z.object({
 });
 
 async function ownedProject(userId: string, id: string) {
-  const p = await prisma.project.findUnique({ where: { id }, include: { keywords: true } });
-  if (!p || p.userId !== userId) return null;
+  const p = await prisma.project.findFirst({
+    where: { id, userId, deletedAt: null },
+    include: { keywords: true },
+  });
   return p;
 }
 
@@ -57,7 +59,12 @@ export async function DELETE(_req: NextRequest, ctx: Ctx) {
     const { id } = await ctx.params;
     const project = await ownedProject(user.id, id);
     if (!project) return jsonError('Not found', 404);
-    await prisma.project.delete({ where: { id } });
+    // Soft delete: keep all child data (mentions, alerts, reports, scans) intact,
+    // just mark project as deleted + deactivate scheduler.
+    await prisma.project.update({
+      where: { id },
+      data: { deletedAt: new Date(), active: false },
+    });
     return jsonOk({ ok: true });
   });
 }

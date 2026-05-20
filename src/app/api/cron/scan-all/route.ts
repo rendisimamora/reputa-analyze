@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     const token = req.nextUrl.searchParams.get('token') ?? req.headers.get('x-cron-token');
     if (!token || token !== env.sessionPassword) return jsonError('Forbidden', 403);
 
-    const projects = await prisma.project.findMany({ where: { active: true } });
+    const projects = await prisma.project.findMany({ where: { active: true, deletedAt: null } });
     const results: Array<{ projectId: string; ok: boolean; error?: string }> = [];
     for (const p of projects) {
       try {

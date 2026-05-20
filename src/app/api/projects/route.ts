@@ -15,7 +15,7 @@ export async function GET() {
   return handleApi(async () => {
     const user = await requireUser();
     const projects = await prisma.project.findMany({
-      where: { userId: user.id },
+      where: { userId: user.id, deletedAt: null },
       include: { _count: { select: { mentions: true, alerts: true } }, keywords: true },
       orderBy: { updatedAt: 'desc' },
     });

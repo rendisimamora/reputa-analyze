@@ -9,7 +9,7 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
   return handleApi(async () => {
     const user = await requireUser();
     const { id } = await ctx.params;
-    const project = await prisma.project.findUnique({ where: { id } });
+    const project = await prisma.project.findFirst({ where: { id, deletedAt: null } });
     if (!project || project.userId !== user.id) return jsonError('Not found', 404);
     const alerts = await prisma.alert.findMany({
       where: { projectId: id },
@@ -24,7 +24,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   return handleApi(async () => {
     const user = await requireUser();
     const { id } = await ctx.params;
-    const project = await prisma.project.findUnique({ where: { id } });
+    const project = await prisma.project.findFirst({ where: { id, deletedAt: null } });
     if (!project || project.userId !== user.id) return jsonError('Not found', 404);
     const body = (await req.json().catch(() => ({}))) as { alertId?: string; acknowledged?: boolean };
     if (!body.alertId) return jsonError('alertId required', 400);

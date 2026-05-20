@@ -10,7 +10,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   return handleApi(async () => {
     const user = await requireUser();
     const { id } = await ctx.params;
-    const project = await prisma.project.findUnique({ where: { id } });
+    const project = await prisma.project.findFirst({ where: { id, deletedAt: null } });
     if (!project || project.userId !== user.id) return jsonError('Not found', 404);
 
     const p = req.nextUrl.searchParams;

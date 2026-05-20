@@ -30,11 +30,11 @@ export interface ScanResult {
 
 /** Starts a scan in the background. Returns the new scanRunId immediately. */
 export async function startScan(projectId: string, trigger: ScanTrigger = 'MANUAL'): Promise<string> {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
+  const project = await prisma.project.findFirst({
+    where: { id: projectId, deletedAt: null },
     include: { keywords: true },
   });
-  if (!project) throw new Error('Project not found');
+  if (!project) throw new Error('Project not found or has been deleted');
   if (!project.keywords.length) throw new Error('Project has no keywords');
 
   const scan = await prisma.scanRun.create({
