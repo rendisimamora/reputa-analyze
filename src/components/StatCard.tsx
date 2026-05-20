@@ -1,5 +1,6 @@
 import { clsx } from 'clsx';
 import type { LucideIcon } from 'lucide-react';
+import { HelpTooltip } from './Tooltip';
 
 export function StatCard({
   label,
@@ -7,17 +8,22 @@ export function StatCard({
   hint,
   Icon,
   tone = 'default',
+  tooltip,
 }: {
   label: string;
   value: string | number;
   hint?: string;
   Icon?: LucideIcon;
   tone?: 'default' | 'good' | 'warn' | 'bad';
+  tooltip?: string;
 }) {
   return (
     <div className="card p-4">
       <div className="flex items-center justify-between text-ink-300">
-        <div className="text-xs uppercase tracking-wider">{label}</div>
+        <div className="text-xs uppercase tracking-wider flex items-center gap-1.5">
+          {label}
+          {tooltip && <HelpTooltip text={tooltip} />}
+        </div>
         {Icon && <Icon size={16} className="text-ink-400" />}
       </div>
       <div
