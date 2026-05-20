@@ -33,10 +33,10 @@ export async function GET(req: NextRequest, ctx: Ctx) {
       if (to) (where.publishedAt as Prisma.DateTimeFilter).lte = new Date(to);
     }
 
-    const take = Math.min(200, Math.max(1, Number(p.get('take') ?? 100)));
+    const take = Math.min(200, Math.max(5, Number(p.get('take') ?? 25)));
     const skip = Math.max(0, Number(p.get('skip') ?? 0));
 
-    const [items, total] = await Promise.all([
+    const [items, total, distinctSources] = await Promise.all([
       prisma.mention.findMany({
         where,
         orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
@@ -44,7 +44,21 @@ export async function GET(req: NextRequest, ctx: Ctx) {
         skip,
       }),
       prisma.mention.count({ where }),
+      // distinct list for the Source filter dropdown — scoped to this project's
+      // existing mentions so we never show sources that have zero data.
+      prisma.mention.findMany({
+        where: { projectId: id },
+        distinct: ['sourceKey'],
+        select: { sourceKey: true, sourceName: true },
+        orderBy: { sourceKey: 'asc' },
+      }),
     ]);
-    return jsonOk({ items, total });
+    return jsonOk({
+      items,
+      total,
+      take,
+      skip,
+      sources: distinctSources.map((s) => ({ key: s.sourceKey, name: s.sourceName })),
+    });
   });
 }
