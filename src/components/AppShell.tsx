@@ -3,24 +3,44 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { Activity, BarChart3, Bell, ChevronDown, FileText, FolderKanban, LogOut, Plus, Radar, Search } from 'lucide-react';
+import {
+  Activity,
+  BarChart3,
+  Bell,
+  ChevronDown,
+  FileText,
+  FolderKanban,
+  LogOut,
+  Plus,
+  Radar,
+  Search,
+  Settings,
+} from 'lucide-react';
 import { clsx } from 'clsx';
 
-interface Project { id: string; name: string }
+interface Project {
+  id: string;
+  name: string;
+  unacknowledgedAlerts?: number;
+}
+
 interface User { id: string; email: string; name: string | null }
 
 export default function AppShell({
   projectId: projectIdProp,
   children,
 }: {
-  /** Optional override. Normally derived from pathname so the shell can be mounted
-   *  inside a Next.js layout (so it doesn't re-mount on intra-route navigation). */
   projectId?: string;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  // Derive projectId from /projects/<id>(/...)? — works inside the projects layout
+  const [user, setUser] = useState<User | null>(null);
+  const [projects, setProjects] = useState<Project[] | null>(null);
+  const [open, setOpen] = useState(false);
+  const ddRef = useRef<HTMLDivElement>(null);
+
+  // Derive projectId from /projects/<id>(/...)? so the shell can sit in a layout
   const derivedProjectId = (() => {
     const m = pathname.match(/^\/projects\/([^/]+)/);
     if (!m) return undefined;
@@ -28,10 +48,6 @@ export default function AppShell({
     return m[1];
   })();
   const projectId = projectIdProp ?? derivedProjectId;
-  const [user, setUser] = useState<User | null>(null);
-  const [projects, setProjects] = useState<Project[] | null>(null);
-  const [open, setOpen] = useState(false);
-  const ddRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     (async () => {
@@ -42,6 +58,41 @@ export default function AppShell({
       setProjects(p.projects ?? []);
     })();
   }, [router]);
+
+  // Listen for in-app events from other pages so the sidebar stays in sync
+  // WITHOUT extra GET /api/projects round trips:
+  //   - project-updated: Settings page saved name/description/active
+  //   - project-deleted: Settings or project-card delete
+  //   - alerts-changed:  Alerts page acknowledged something (changes badge count)
+  useEffect(() => {
+    const onUpdated = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { id: string; name?: string; description?: string | null; active?: boolean };
+      if (!detail?.id) return;
+      setProjects((cur) =>
+        cur ? cur.map((p) => (p.id === detail.id ? { ...p, ...(detail.name !== undefined ? { name: detail.name } : {}) } : p)) : cur,
+      );
+    };
+    const onDeleted = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { id: string };
+      if (!detail?.id) return;
+      setProjects((cur) => (cur ? cur.filter((p) => p.id !== detail.id) : cur));
+    };
+    const onAlertsChanged = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { id: string; unacknowledgedAlerts: number };
+      if (!detail?.id) return;
+      setProjects((cur) =>
+        cur ? cur.map((p) => (p.id === detail.id ? { ...p, unacknowledgedAlerts: detail.unacknowledgedAlerts } : p)) : cur,
+      );
+    };
+    window.addEventListener('reputascan:project-updated', onUpdated);
+    window.addEventListener('reputascan:project-deleted', onDeleted);
+    window.addEventListener('reputascan:alerts-changed', onAlertsChanged);
+    return () => {
+      window.removeEventListener('reputascan:project-updated', onUpdated);
+      window.removeEventListener('reputascan:project-deleted', onDeleted);
+      window.removeEventListener('reputascan:alerts-changed', onAlertsChanged);
+    };
+  }, []);
 
   // Close dropdown on outside click / escape
   useEffect(() => {
@@ -64,14 +115,16 @@ export default function AppShell({
   }
 
   const currentProject = projects?.find((p) => p.id === projectId) ?? null;
+  const currentUnack = currentProject?.unacknowledgedAlerts ?? 0;
 
   const nav = projectId
     ? [
-        { href: `/projects/${projectId}`, label: 'Dashboard', icon: BarChart3 },
-        { href: `/projects/${projectId}/mentions`, label: 'Mentions', icon: Search },
-        { href: `/projects/${projectId}/alerts`, label: 'Alerts', icon: Bell },
-        { href: `/projects/${projectId}/report`, label: 'Report', icon: FileText },
-        { href: `/projects/${projectId}/crawl`, label: 'Crawl Logs', icon: Activity },
+        { href: `/projects/${projectId}`, label: 'Dashboard', icon: BarChart3, badge: 0 },
+        { href: `/projects/${projectId}/mentions`, label: 'Mentions', icon: Search, badge: 0 },
+        { href: `/projects/${projectId}/alerts`, label: 'Alerts', icon: Bell, badge: currentUnack },
+        { href: `/projects/${projectId}/report`, label: 'Report', icon: FileText, badge: 0 },
+        { href: `/projects/${projectId}/crawl`, label: 'Crawl Logs', icon: Activity, badge: 0 },
+        { href: `/projects/${projectId}/settings`, label: 'Settings', icon: Settings, badge: 0 },
       ]
     : [];
 
@@ -123,6 +176,7 @@ export default function AppShell({
                     ) : (
                       projects.map((p) => {
                         const active = p.id === projectId;
+                        const unack = p.unacknowledgedAlerts ?? 0;
                         return (
                           <Link
                             key={p.id}
@@ -133,7 +187,12 @@ export default function AppShell({
                               active ? 'bg-accent-500/10 text-accent-400' : 'text-ink-200 hover:bg-ink-800',
                             )}
                           >
-                            <span className="truncate">{p.name}</span>
+                            <span className="truncate flex items-center gap-2">
+                              {unack > 0 && (
+                                <span className="w-1.5 h-1.5 rounded-full bg-danger-500 shrink-0" title={`${unack} alert belum dikonfirmasi`} />
+                              )}
+                              {p.name}
+                            </span>
                             {active && <span className="w-1.5 h-1.5 rounded-full bg-accent-400 shrink-0" />}
                           </Link>
                         );
@@ -172,12 +231,20 @@ export default function AppShell({
                     key={n.href}
                     href={n.href}
                     className={clsx(
-                      'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm',
+                      'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm relative',
                       active ? 'bg-accent-500/15 text-accent-400' : 'text-ink-200 hover:bg-ink-800/80',
                     )}
                   >
                     <Icon size={16} />
-                    {n.label}
+                    <span className="flex-1">{n.label}</span>
+                    {n.badge > 0 && (
+                      <span
+                        className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[10px] font-bold text-white bg-danger-500 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.5)]"
+                        title={`${n.badge} belum dikonfirmasi`}
+                      >
+                        {n.badge > 9 ? '9+' : n.badge}
+                      </span>
+                    )}
                   </Link>
                 );
               })}

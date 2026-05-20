@@ -27,12 +27,21 @@ export default function AlertsPage({ params }: { params: Promise<{ id: string }>
   }
 
   async function ack(alertId: string) {
+    // Optimistic UI update — flip locally first
+    setAlerts((cur) => (cur ? cur.map((a) => (a.id === alertId ? { ...a, acknowledged: true } : a)) : cur));
     await fetch(`/api/projects/${id}/alerts`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ alertId, acknowledged: true }),
     });
-    void load();
+    // Notify sidebar so the badge count drops without re-fetching /api/projects
+    setAlerts((cur) => {
+      const unack = (cur ?? []).filter((a) => !a.acknowledged).length;
+      window.dispatchEvent(
+        new CustomEvent('reputascan:alerts-changed', { detail: { id, unacknowledgedAlerts: unack } }),
+      );
+      return cur;
+    });
   }
 
   if (alerts === null) return <AlertsSkeleton />;
