@@ -1,12 +1,14 @@
 'use client';
 
 import { use, useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { StatCard } from '@/components/StatCard';
 import { SentimentBadge, CrawlStatusBadge } from '@/components/SentimentBadge';
 import { SentimentTrendChart, MentionTrendChart, SourceBarChart, SentimentPie } from '@/components/charts';
 import { ScanProgressBar, type ScanProgress } from '@/components/ScanProgressBar';
 import { DashboardSkeleton } from '@/components/DashboardSkeleton';
-import { AlertTriangle, BarChart3, BrainCircuit, MessageSquare, RefreshCw, ShieldAlert, ThumbsDown, ThumbsUp, Sparkles } from 'lucide-react';
+import { HelpTooltip } from '@/components/Tooltip';
+import { AlertTriangle, ArrowRight, BarChart3, BrainCircuit, MessageSquare, RefreshCw, ShieldAlert, ThumbsDown, ThumbsUp, Sparkles } from 'lucide-react';
 
 interface DashboardData {
   project: { id: string; name: string; description: string | null; lastScanAt: string | null };
@@ -192,7 +194,10 @@ export default function ProjectDashboard({ params }: { params: Promise<{ id: str
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="card-glow p-4">
-          <div className="text-xs uppercase tracking-wider text-ink-300">Reputation Score</div>
+          <div className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-ink-300">
+            Reputation Score
+            <HelpTooltip text="Skor 0–100 yang menggabungkan rasio sentimen positif/negatif (40%), volume mention (15%), kredibilitas media (15%), keragaman sumber (10%), recency (10%), dikurangi penalti tren negatif (10%). Kategori: 80–100 Excellent · 60–79 Good · 40–59 Risky · 0–39 Critical." />
+          </div>
           <div className={`mt-2 text-4xl font-bold ${score === null ? 'text-ink-500' : tone === 'good' ? 'text-success-500' : tone === 'warn' ? 'text-warning-500' : tone === 'bad' ? 'text-danger-500' : 'text-accent-400'}`}>
             {score === null ? '—' : score}
           </div>
@@ -200,9 +205,26 @@ export default function ProjectDashboard({ params }: { params: Promise<{ id: str
             {score === null ? `Butuh ≥3 mention dianalisis (${data?.reputation.counts.analyzed ?? 0} so far)` : data?.reputation.category}
           </div>
         </div>
-        <StatCard label="Total Mentions" value={data?.totals.mentions ?? 0} Icon={MessageSquare} />
-        <StatCard label="Positive" value={data?.totals.positive ?? 0} Icon={ThumbsUp} tone="good" />
-        <StatCard label="Negative" value={data?.totals.negative ?? 0} Icon={ThumbsDown} tone="bad" />
+        <StatCard
+          label="Total Mentions"
+          value={data?.totals.mentions ?? 0}
+          Icon={MessageSquare}
+          tooltip="Jumlah seluruh artikel yang berhasil dikumpulkan dari RSS & halaman publik media Indonesia untuk project ini (sudah di-dedupe)."
+        />
+        <StatCard
+          label="Positive"
+          value={data?.totals.positive ?? 0}
+          Icon={ThumbsUp}
+          tone="good"
+          tooltip="Mention yang menggambarkan subjek dalam konteks baik: prestasi, penghargaan, pertumbuhan, ekspansi, inovasi, dukungan publik. Skor AI > 0."
+        />
+        <StatCard
+          label="Negative"
+          value={data?.totals.negative ?? 0}
+          Icon={ThumbsDown}
+          tone="bad"
+          tooltip="Mention berisi kontroversi, kritik, skandal, kasus hukum, kerugian, kegagalan, atau isu etika yang merugikan subjek. Skor AI < 0."
+        />
       </div>
 
       {data?.aiSummary && (data.aiSummary.executive || data.aiSummary.recommendation) && (
@@ -283,7 +305,15 @@ export default function ProjectDashboard({ params }: { params: Promise<{ id: str
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="card p-4">
-          <div className="text-sm font-medium mb-3">Crawl Status per Source</div>
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-sm font-medium">Crawl Status per Source</div>
+            <Link
+              href={`/projects/${id}/crawl`}
+              className="text-xs text-accent-400 hover:text-accent-500 inline-flex items-center gap-1"
+            >
+              Lihat semua <ArrowRight size={12} />
+            </Link>
+          </div>
           <div className="max-h-72 overflow-auto scrollbar">
             <table className="dt w-full">
               <thead><tr><th>Source</th><th>Status</th><th>Errors</th><th>Last fetch</th></tr></thead>
@@ -303,9 +333,17 @@ export default function ProjectDashboard({ params }: { params: Promise<{ id: str
           </div>
         </div>
         <div className="card p-4">
-          <div className="text-sm font-medium mb-3">Recent Mentions</div>
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-sm font-medium">Recent Mentions</div>
+            <Link
+              href={`/projects/${id}/mentions`}
+              className="text-xs text-accent-400 hover:text-accent-500 inline-flex items-center gap-1"
+            >
+              Lihat semua <ArrowRight size={12} />
+            </Link>
+          </div>
           <div className="max-h-72 overflow-auto scrollbar space-y-2">
-            {data?.recent.length ? data.recent.map((m) => (
+            {data?.recent.length ? data.recent.slice(0, 10).map((m) => (
               <a key={m.id} href={m.url} target="_blank" rel="noreferrer noopener" className="block rounded-md hover:bg-ink-800/60 p-2 -m-2">
                 <div className="flex items-center gap-2 text-xs text-ink-400"><span>{m.sourceName}</span>·<span>{m.publishedAt ? new Date(m.publishedAt).toLocaleDateString('id-ID') : '—'}</span><SentimentBadge value={m.sentiment} /></div>
                 <div className="text-sm text-ink-100 line-clamp-2">{m.title}</div>
