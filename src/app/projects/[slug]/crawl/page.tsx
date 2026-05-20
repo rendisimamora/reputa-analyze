@@ -72,7 +72,7 @@ export default function CrawlLogsPage({ params }: { params: Promise<{ slug: stri
         setTransition(false);
       }
     },
-    [id, page, pageSize, filters],
+    [slug, page, pageSize, filters],
   );
 
   // Guard against React StrictMode's intentional double-effect-invocation in dev.

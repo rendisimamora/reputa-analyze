@@ -82,7 +82,7 @@ export default function MentionsPage({ params }: { params: Promise<{ slug: strin
         setTransition(false);
       }
     },
-    [id, page, pageSize, filters],
+    [slug, page, pageSize, filters],
   );
 
   // StrictMode guard

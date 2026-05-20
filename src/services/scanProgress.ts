@@ -41,7 +41,13 @@ const STAGE_WEIGHTS: Record<ScanStage, [number, number]> = {
   FAILED: [0, 0],
 };
 
-const store = new Map<string, ScanProgressState>();
+// Persist the in-memory store across Next.js dev HMR module reloads.
+// Without this, the Map gets recreated empty on every code change → GET
+// /scan polling falls back to "last ScanRun row" which shows static 0%.
+const globalForProgress = globalThis as unknown as { __reputaScanProgress?: Map<string, ScanProgressState> };
+const store: Map<string, ScanProgressState> =
+  globalForProgress.__reputaScanProgress ?? new Map<string, ScanProgressState>();
+if (process.env.NODE_ENV !== 'production') globalForProgress.__reputaScanProgress = store;
 
 export function start(projectId: string, scanRunId: string, totalSources: number): ScanProgressState {
   const state: ScanProgressState = {

@@ -43,8 +43,17 @@ export async function startScan(projectId: string, trigger: ScanTrigger = 'MANUA
 
   progress.start(projectId, scan.id, ALL_SOURCES.length);
 
-  // Fire-and-forget; errors caught and persisted inside.
-  void executeScan(project.id, project.name, project.keywords.map((k) => k.term), project.keywords[0]?.matchMode ?? 'ANY', scan.id).catch(() => {});
+  // Fire-and-forget. Inner code persists errors to ScanRun + scanProgress,
+  // but log unexpected exceptions to console so they're visible during dev.
+  void executeScan(
+    project.id,
+    project.name,
+    project.keywords.map((k) => k.term),
+    project.keywords[0]?.matchMode ?? 'ANY',
+    scan.id,
+  ).catch((err) => {
+    console.error('[scanRunner] executeScan threw an unhandled error:', err);
+  });
 
   return scan.id;
 }
@@ -80,9 +89,12 @@ async function executeScan(
   let analyzed = 0;
   let errors = 0;
 
+  console.log(`[scan ${scanRunId}] START — project="${projectName}" keywords=${JSON.stringify(keywords)}`);
+
   try {
     // ---- COLLECTING ----
     progress.update(scanRunId, { stage: 'COLLECTING', label: 'Mengambil data dari 16 media…' });
+    console.log(`[scan ${scanRunId}] COLLECTING from ${keywords.length} keyword(s)…`);
 
     const report = await collectAll({
       keywords,
@@ -103,6 +115,7 @@ async function executeScan(
 
     // ---- PERSISTING ----
     progress.update(scanRunId, { stage: 'PERSISTING', label: `Menyimpan ${fetched} mention…` });
+    console.log(`[scan ${scanRunId}] PERSISTING ${fetched} article(s)…`);
 
     for (const a of report.articles) {
       try {
@@ -152,6 +165,7 @@ async function executeScan(
       analyzed: 0,
       label: `Menganalisa sentimen ${toAnalyzeRows.length} mention…`,
     });
+    console.log(`[scan ${scanRunId}] ANALYZING ${toAnalyzeRows.length} mention(s) with AI…`);
 
     const limit = pLimit(3);
     const analyzerErrors: string[] = [];
@@ -208,6 +222,7 @@ async function executeScan(
 
     // ---- SCORING ----
     progress.update(scanRunId, { stage: 'SCORING', label: 'Menghitung reputation score…' });
+    console.log(`[scan ${scanRunId}] SCORING — analyzed=${analyzed}, errors=${errors}`);
     const all = await prisma.mention.findMany({ where: { projectId } });
     const rep = computeReputation(all);
     await evaluateAlerts(projectId, rep.score);
@@ -243,8 +258,10 @@ async function executeScan(
     });
 
     progress.finish(scanRunId, rep.score);
+    console.log(`[scan ${scanRunId}] DONE — score=${rep.score} (${rep.category})`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[scan ${scanRunId}] FAILED at stage:`, msg, err);
     await prisma.scanRun
       .update({
         where: { id: scanRunId },
