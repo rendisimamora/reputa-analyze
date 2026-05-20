@@ -19,7 +19,22 @@ export async function GET() {
       include: { _count: { select: { mentions: true, alerts: true } }, keywords: true },
       orderBy: { updatedAt: 'desc' },
     });
-    return jsonOk({ projects });
+
+    // Tally unacknowledged alerts in a single grouped query so we can show a
+    // red notification badge on cards that need attention.
+    const unack = await prisma.alert.groupBy({
+      by: ['projectId'],
+      where: { projectId: { in: projects.map((p) => p.id) }, acknowledged: false },
+      _count: { _all: true },
+    });
+    const unackMap = new Map(unack.map((r) => [r.projectId, r._count._all]));
+
+    return jsonOk({
+      projects: projects.map((p) => ({
+        ...p,
+        unacknowledgedAlerts: unackMap.get(p.id) ?? 0,
+      })),
+    });
   });
 }
 

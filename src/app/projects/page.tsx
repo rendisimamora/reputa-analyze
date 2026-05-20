@@ -11,6 +11,12 @@ interface Project {
   lastScanAt: string | null;
   _count: { mentions: number; alerts: number };
   keywords: Array<{ term: string }>;
+  unacknowledgedAlerts: number;
+}
+
+function formatDate(iso: string | null): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 export default function ProjectsList() {
@@ -98,6 +104,17 @@ export default function ProjectsList() {
                 href={`/projects/${p.id}`}
                 className="card hover:border-accent-500/40 transition p-5 group block relative"
               >
+                {/* Unacknowledged alerts indicator — pulsing red dot at top-left of card */}
+                {p.unacknowledgedAlerts > 0 && (
+                  <span
+                    className="absolute -top-1.5 -left-1.5 flex h-3 w-3"
+                    title={`${p.unacknowledgedAlerts} alert belum dikonfirmasi`}
+                  >
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-danger-500 opacity-75 animate-ping" />
+                    <span className="relative inline-flex h-3 w-3 rounded-full bg-danger-500 ring-2 ring-ink-900" />
+                  </span>
+                )}
+
                 <div className="flex items-start justify-between">
                   <div className="font-medium">{p.name}</div>
                   <div className="flex items-center gap-1 shrink-0">
@@ -125,9 +142,23 @@ export default function ProjectsList() {
                 </div>
 
                 <div className="mt-4 grid grid-cols-3 text-center text-xs text-ink-300">
-                  <div><div className="text-base font-semibold text-ink-100">{p._count.mentions}</div>mentions</div>
-                  <div><div className="text-base font-semibold text-ink-100">{p._count.alerts}</div>alerts</div>
-                  <div><div className="text-base font-semibold text-ink-100">{p.lastScanAt ? new Date(p.lastScanAt).toLocaleDateString('id-ID') : '—'}</div>last scan</div>
+                  <div>
+                    <div className="text-base font-semibold text-ink-100">{p._count.mentions}</div>
+                    mentions
+                  </div>
+                  <div>
+                    <div
+                      className={`text-base font-semibold ${p.unacknowledgedAlerts > 0 ? 'text-danger-500' : 'text-ink-100'}`}
+                      title={p.unacknowledgedAlerts > 0 ? `${p.unacknowledgedAlerts} belum dikonfirmasi` : undefined}
+                    >
+                      {p._count.alerts}
+                    </div>
+                    <div>alerts</div>
+                  </div>
+                  <div>
+                    <div className="text-base font-semibold text-ink-100">{formatDate(p.lastScanAt)}</div>
+                    last scan
+                  </div>
                 </div>
 
                 {/* Confirm overlay */}
