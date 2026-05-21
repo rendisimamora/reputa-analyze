@@ -31,6 +31,8 @@ module.exports = {
         TZ: 'Asia/Jakarta',
         QUEUE_POLL_MS: '2000',
         STUCK_RESCUE_MS: '900000',
+        // Cron schedule: scan setiap jam 09:00, 12:00, 15:00, 18:00, 21:00, 00:00 WIB
+        SCAN_CRON: '0 0,9,12,15,18,21 * * *',
       },
       // Restart with exponential backoff if it keeps crashing
       restart_delay: 5000,
