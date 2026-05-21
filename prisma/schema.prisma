@@ -59,6 +59,14 @@ model Project {
   insightGeneratedAt  DateTime?
   insightError        String?  @db.Text
 
+  // Telegram bot notification (per-project). When enabled, every Alert created
+  // for this project is pushed to the configured chat via the configured bot.
+  telegramEnabled     Boolean  @default(false)
+  telegramBotToken    String?  @db.Text
+  telegramChatId      String?
+  telegramLastSentAt  DateTime?
+  telegramLastError   String?  @db.Text
+
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   keywords  Keyword[]
   mentions  Mention[]

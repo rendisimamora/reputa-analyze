@@ -1,7 +1,7 @@
 'use client';
 
 import { use, useCallback, useEffect, useMemo, useState } from 'react';
-import { Lightbulb, RefreshCw, Sparkles, Tag, AlertTriangle, ChevronDown, Plus, Loader2 } from 'lucide-react';
+import { Lightbulb, RefreshCw, Sparkles, Tag, AlertTriangle, ChevronDown, Plus, Loader2, CheckCircle2, RotateCcw } from 'lucide-react';
 import { clsx } from 'clsx';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -9,11 +9,14 @@ import { clsx } from 'clsx';
 // page can render without pulling server-only modules into the client bundle.
 // ─────────────────────────────────────────────────────────────────────────────
 interface ContentIdea {
+  id: string;
   title: string;
   concept: string;
   influencerType: string;
   issueCounter: string;
   tone: 'informational' | 'emotional' | 'data-driven' | 'human-interest';
+  completed?: boolean;
+  completedAt?: string;
 }
 
 interface KeywordSuggestion {
@@ -23,7 +26,7 @@ interface KeywordSuggestion {
   category: 'alias' | 'topic' | 'critic' | 'ally' | 'context';
 }
 
-interface CachedContent { ideas: ContentIdea[]; generatedAt: string; error?: string | null }
+interface CachedContent { ideas: ContentIdea[]; resolvedIssues?: string[]; generatedAt: string; error?: string | null }
 interface CachedKeyword { suggestions: KeywordSuggestion[]; generatedAt: string; error?: string | null }
 interface InsightPayload { content: CachedContent | null; keyword: CachedKeyword | null }
 
@@ -216,7 +219,12 @@ export default function InsightPage({ params }: { params: Promise<{ slug: string
           ))}
         </div>
       ) : view === 'content' ? (
-        <ContentList ideas={data?.content?.ideas ?? []} regenerating={regen === 'content'} />
+        <ContentList
+          ideas={data?.content?.ideas ?? []}
+          regenerating={regen === 'content'}
+          slug={slug}
+          onChange={(next) => setData((cur) => ({ content: next, keyword: cur?.keyword ?? null }))}
+        />
       ) : (
         <KeywordList suggestions={data?.keyword?.suggestions ?? []} regenerating={regen === 'keyword'} slug={slug} />
       )}
@@ -224,7 +232,40 @@ export default function InsightPage({ params }: { params: Promise<{ slug: string
   );
 }
 
-function ContentList({ ideas, regenerating }: { ideas: ContentIdea[]; regenerating: boolean }) {
+function ContentList({
+  ideas,
+  regenerating,
+  slug,
+  onChange,
+}: {
+  ideas: ContentIdea[];
+  regenerating: boolean;
+  slug: string;
+  onChange: (next: CachedContent) => void;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [showCompleted, setShowCompleted] = useState(false);
+
+  const completedCount = ideas.filter((i) => i.completed).length;
+  const visibleIdeas = showCompleted ? ideas : ideas.filter((i) => !i.completed);
+
+  async function toggleComplete(idea: ContentIdea) {
+    setBusy(idea.id);
+    try {
+      const r = await fetch(`/api/projects/${slug}/insight/complete`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ideaId: idea.id, completed: !idea.completed }),
+      });
+      if (r.ok) {
+        const j = await r.json();
+        if (j.content) onChange(j.content);
+      }
+    } finally {
+      setBusy(null);
+    }
+  }
+
   if (regenerating) {
     return (
       <div className="card p-8 text-center text-ink-300">
@@ -240,30 +281,86 @@ function ContentList({ ideas, regenerating }: { ideas: ContentIdea[]; regenerati
       </div>
     );
   }
+
   return (
-    <div className="grid gap-3 md:grid-cols-2">
-      {ideas.map((idea, i) => (
-        <div key={i} className="card p-4 hover:border-accent-500/40 transition">
-          <div className="flex items-start justify-between gap-3 mb-2">
-            <div className="text-base font-semibold text-ink-100 leading-snug">{idea.title}</div>
-            <span className={clsx('text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border whitespace-nowrap', TONE_STYLES[idea.tone])}>
-              {idea.tone}
-            </span>
+    <>
+      {completedCount > 0 && (
+        <div className="mb-4 flex items-center justify-between text-xs">
+          <div className="text-ink-400">
+            <span className="text-success-500 font-medium">{completedCount}</span> sudah ditandai selesai
+            {' · '}
+            <span className="text-ink-500">Issue yang sudah selesai tidak akan disuggest lagi saat regenerate.</span>
           </div>
-          <p className="text-sm text-ink-300 mb-3 leading-relaxed">{idea.concept}</p>
-          <div className="space-y-1.5 text-xs">
-            <div className="flex items-start gap-2">
-              <span className="text-ink-500 shrink-0 w-24">Counter issue:</span>
-              <span className="text-warning-400 flex-1">{idea.issueCounter}</span>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-ink-500 shrink-0 w-24">Influencer:</span>
-              <span className="text-ink-200 flex-1">{idea.influencerType}</span>
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowCompleted((v) => !v)}
+            className="text-accent-400 hover:text-accent-500"
+          >
+            {showCompleted ? 'Sembunyikan yang selesai' : `Tampilkan yang selesai (${completedCount})`}
+          </button>
         </div>
-      ))}
-    </div>
+      )}
+
+      <div className="grid gap-3 md:grid-cols-2">
+        {visibleIdeas.map((idea) => {
+          const isDone = !!idea.completed;
+          return (
+            <div
+              key={idea.id}
+              className={clsx(
+                'card p-4 transition relative',
+                isDone
+                  ? 'opacity-60 border-success-500/30 bg-success-500/5'
+                  : 'hover:border-accent-500/40',
+              )}
+            >
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <div className={clsx('text-base font-semibold leading-snug', isDone ? 'text-ink-300' : 'text-ink-100')}>
+                  {isDone && <CheckCircle2 size={16} className="inline mr-1.5 -mt-0.5 text-success-500" />}
+                  {idea.title}
+                </div>
+                <span className={clsx('text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border whitespace-nowrap', TONE_STYLES[idea.tone])}>
+                  {idea.tone}
+                </span>
+              </div>
+              <p className={clsx('text-sm mb-3 leading-relaxed', isDone ? 'text-ink-400' : 'text-ink-300')}>
+                {idea.concept}
+              </p>
+              <div className="space-y-1.5 text-xs mb-3">
+                <div className="flex items-start gap-2">
+                  <span className="text-ink-500 shrink-0 w-24">Counter issue:</span>
+                  <span className={clsx('flex-1', isDone ? 'text-ink-400 line-through' : 'text-warning-400')}>{idea.issueCounter}</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-ink-500 shrink-0 w-24">Influencer:</span>
+                  <span className={clsx('flex-1', isDone ? 'text-ink-400' : 'text-ink-200')}>{idea.influencerType}</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => toggleComplete(idea)}
+                disabled={busy === idea.id}
+                className={clsx(
+                  'w-full text-xs py-1.5 px-3 rounded-md border transition flex items-center justify-center gap-1.5',
+                  isDone
+                    ? 'border-ink-700 hover:border-ink-600 text-ink-300'
+                    : 'border-success-500/40 bg-success-500/5 hover:bg-success-500/10 text-success-500',
+                )}
+              >
+                {busy === idea.id ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : isDone ? (
+                  <RotateCcw size={12} />
+                ) : (
+                  <CheckCircle2 size={12} />
+                )}
+                {isDone ? 'Mark as Open' : 'Mark as Complete'}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
 

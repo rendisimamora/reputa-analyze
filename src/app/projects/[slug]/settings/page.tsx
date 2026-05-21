@@ -2,7 +2,7 @@
 
 import { use, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { CheckCircle2, Loader2, Power, Save, Settings as SettingsIcon, Trash2, X } from 'lucide-react';
+import { CheckCircle2, Loader2, Power, Save, Send, Settings as SettingsIcon, Trash2, X, AlertTriangle } from 'lucide-react';
 import { clsx } from 'clsx';
 
 interface Keyword { id: string; term: string; matchMode: 'ANY' | 'ALL' }
@@ -15,6 +15,11 @@ interface Project {
   lastScanAt: string | null;
   createdAt: string;
   keywords: Keyword[];
+  telegramEnabled?: boolean;
+  telegramBotToken?: string | null;
+  telegramChatId?: string | null;
+  telegramLastSentAt?: string | null;
+  telegramLastError?: string | null;
 }
 
 export default function ProjectSettings({ params }: { params: Promise<{ slug: string }> }) {
@@ -25,6 +30,14 @@ export default function ProjectSettings({ params }: { params: Promise<{ slug: st
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [active, setActive] = useState(true);
+
+  // Telegram bot config — per project
+  const [telegramEnabled, setTelegramEnabled] = useState(false);
+  const [telegramBotToken, setTelegramBotToken] = useState('');
+  const [telegramChatId, setTelegramChatId] = useState('');
+  const [savingTelegram, setSavingTelegram] = useState(false);
+  const [testingTelegram, setTestingTelegram] = useState(false);
+  const [telegramMsg, setTelegramMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [keywords, setKeywords] = useState<string[]>([]);
   const [matchMode, setMatchMode] = useState<'ANY' | 'ALL'>('ANY');
   const [kwInput, setKwInput] = useState('');
@@ -55,6 +68,67 @@ export default function ProjectSettings({ params }: { params: Promise<{ slug: st
     setActive(p.active);
     setKeywords(p.keywords.map((k) => k.term));
     setMatchMode((p.keywords[0]?.matchMode as 'ANY' | 'ALL') ?? 'ANY');
+    setTelegramEnabled(!!p.telegramEnabled);
+    setTelegramBotToken(p.telegramBotToken ?? '');
+    setTelegramChatId(p.telegramChatId ?? '');
+  }
+
+  async function saveTelegram() {
+    setSavingTelegram(true);
+    setTelegramMsg(null);
+    try {
+      const r = await fetch(`/api/projects/${slug}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          telegramEnabled,
+          telegramBotToken: telegramBotToken.trim() || null,
+          telegramChatId: telegramChatId.trim() || null,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        setTelegramMsg({ ok: false, text: j.error ?? 'Gagal menyimpan' });
+        return;
+      }
+      setTelegramMsg({ ok: true, text: 'Tersimpan.' });
+      // Refresh project + input state from server so the UI reflects what's actually
+      // persisted (especially relevant for the password-masked token field).
+      if (j.project) {
+        const p = j.project as Project;
+        setProject(p);
+        setTelegramEnabled(!!p.telegramEnabled);
+        setTelegramBotToken(p.telegramBotToken ?? '');
+        setTelegramChatId(p.telegramChatId ?? '');
+      }
+    } finally {
+      setSavingTelegram(false);
+    }
+  }
+
+  async function testTelegram() {
+    setTestingTelegram(true);
+    setTelegramMsg(null);
+    try {
+      const r = await fetch(`/api/projects/${slug}/telegram-test`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          botToken: telegramBotToken.trim() || undefined,
+          chatId: telegramChatId.trim() || undefined,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        setTelegramMsg({ ok: false, text: j.error ?? `Test gagal (${r.status})` });
+        return;
+      }
+      setTelegramMsg({ ok: true, text: 'Test message terkirim! Cek Telegram kamu.' });
+    } catch (e) {
+      setTelegramMsg({ ok: false, text: e instanceof Error ? e.message : 'Test gagal' });
+    } finally {
+      setTestingTelegram(false);
+    }
   }
 
   function addKeyword() {
@@ -263,6 +337,122 @@ export default function ProjectSettings({ params }: { params: Promise<{ slug: st
             <button onClick={saveKeywords} className="btn-primary" disabled={savingKeywords || keywords.length === 0}>
               {savingKeywords ? <Loader2 size={14} className="animate-spin"/> : <Save size={14}/>}
               {savingKeywords ? 'Menyimpan…' : 'Simpan keywords'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Telegram Notifications */}
+      <div className="card p-5 mb-4 max-w-2xl">
+        <div className="text-sm font-medium mb-1 flex items-center gap-2">
+          <Send size={14} className="text-accent-400" />
+          Telegram Notifications
+        </div>
+        <div className="text-xs text-ink-400 mb-4">
+          Push setiap alert otomatis ke chat Telegram lewat bot. Bikin bot via{' '}
+          <a href="https://t.me/BotFather" target="_blank" rel="noreferrer noopener" className="text-accent-400 hover:underline">
+            @BotFather
+          </a>{' '}
+          → dapet token. Chat ID bisa dicek pakai{' '}
+          <a href="https://t.me/userinfobot" target="_blank" rel="noreferrer noopener" className="text-accent-400 hover:underline">
+            @userinfobot
+          </a>{' '}
+          (kirim /start, balasan = chat ID).
+        </div>
+
+        <div className="space-y-4">
+          <div className="flex items-center justify-between p-3 rounded-md bg-ink-900/40 border border-ink-800">
+            <div>
+              <div className="text-sm text-ink-100">Aktifkan notifikasi</div>
+              <div className="text-xs text-ink-400 mt-0.5">
+                Saat ON, semua alert baru dikirim ke chat di bawah.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTelegramEnabled((v) => !v)}
+              className={clsx(
+                'relative w-11 h-6 rounded-full transition',
+                telegramEnabled ? 'bg-accent-500' : 'bg-ink-700',
+              )}
+            >
+              <div className={clsx(
+                'absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all',
+                telegramEnabled ? 'left-[22px]' : 'left-0.5',
+              )} />
+            </button>
+          </div>
+
+          <div>
+            <label className="label">Bot Token</label>
+            <input
+              type="password"
+              className="input font-mono text-xs"
+              placeholder="1234567890:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+              value={telegramBotToken}
+              onChange={(e) => setTelegramBotToken(e.target.value)}
+            />
+            <div className="text-xs text-ink-500 mt-1 flex items-center justify-between gap-2">
+              <span>Disimpan terenkripsi-at-rest oleh database.</span>
+              {project?.telegramBotToken && !telegramBotToken.trim() && (
+                <span className="text-success-500 flex items-center gap-1">
+                  <CheckCircle2 size={11} /> Token tersimpan
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <label className="label">Chat ID</label>
+            <input
+              type="text"
+              className="input font-mono text-xs"
+              placeholder="cth: 123456789 atau -1001234567890 untuk group"
+              value={telegramChatId}
+              onChange={(e) => setTelegramChatId(e.target.value)}
+            />
+          </div>
+
+          {telegramMsg && (
+            <div className={clsx(
+              'flex items-start gap-2 text-xs p-2.5 rounded-md',
+              telegramMsg.ok
+                ? 'bg-success-500/5 text-success-500 border border-success-500/20'
+                : 'bg-danger-500/5 text-danger-500 border border-danger-500/20',
+            )}>
+              {telegramMsg.ok ? <CheckCircle2 size={14} className="mt-0.5" /> : <AlertTriangle size={14} className="mt-0.5" />}
+              <span>{telegramMsg.text}</span>
+            </div>
+          )}
+
+          {project?.telegramLastSentAt && !telegramMsg && (
+            <div className="text-xs text-ink-500">
+              Terakhir terkirim: {new Date(project.telegramLastSentAt).toLocaleString('id-ID')}
+              {project.telegramLastError && (
+                <div className="text-warning-500 mt-1 flex items-start gap-1.5">
+                  <AlertTriangle size={12} className="mt-0.5" />
+                  Error terakhir: {project.telegramLastError.slice(0, 200)}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={testTelegram}
+              disabled={testingTelegram || (
+                (!telegramBotToken.trim() && !project?.telegramBotToken) ||
+                (!telegramChatId.trim() && !project?.telegramChatId)
+              )}
+              className="btn-ghost"
+            >
+              {testingTelegram ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+              {testingTelegram ? 'Mengirim test…' : 'Test message'}
+            </button>
+            <button onClick={saveTelegram} className="btn-primary" disabled={savingTelegram}>
+              {savingTelegram ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              {savingTelegram ? 'Menyimpan…' : 'Simpan'}
             </button>
           </div>
         </div>

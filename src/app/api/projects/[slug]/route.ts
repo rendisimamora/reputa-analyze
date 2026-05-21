@@ -10,6 +10,9 @@ const UpdateBody = z.object({
   name: z.string().min(2).max(120).optional(),
   description: z.string().max(500).nullable().optional(),
   active: z.boolean().optional(),
+  telegramEnabled: z.boolean().optional(),
+  telegramBotToken: z.string().max(200).nullable().optional(),
+  telegramChatId: z.string().max(100).nullable().optional(),
 });
 
 /** Resolve project by user + slug (per-user unique). */
@@ -46,6 +49,9 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
         ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
         ...(parsed.data.description !== undefined ? { description: parsed.data.description } : {}),
         ...(parsed.data.active !== undefined ? { active: parsed.data.active } : {}),
+        ...(parsed.data.telegramEnabled !== undefined ? { telegramEnabled: parsed.data.telegramEnabled } : {}),
+        ...(parsed.data.telegramBotToken !== undefined ? { telegramBotToken: parsed.data.telegramBotToken } : {}),
+        ...(parsed.data.telegramChatId !== undefined ? { telegramChatId: parsed.data.telegramChatId } : {}),
       },
       include: { keywords: true },
     });
