@@ -15,7 +15,11 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
 
     const result = await reanalyzeProject(project.id);
     if (result.firstError && result.analyzed === 0) {
-      return jsonError(`Semua mention gagal dianalisis. ${result.firstError}`, 502, result);
+      return jsonError(
+        `Semua mention gagal dianalisis. ${result.firstError}`,
+        502,
+        result as unknown as Record<string, unknown>,
+      );
     }
     return jsonOk(result);
   });
