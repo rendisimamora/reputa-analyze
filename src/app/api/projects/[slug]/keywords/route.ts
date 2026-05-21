@@ -39,3 +39,36 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     return jsonOk({ project: updated });
   });
 }
+
+
+const AppendBody = z.object({
+  term: z.string().min(1).max(120),
+  matchMode: z.enum(['ANY', 'ALL']).default('ANY'),
+});
+
+/**
+ * Append a single keyword (used by the Insight page's "Add" button).
+ * No-op if the term already exists for the project.
+ */
+export async function POST(req: NextRequest, ctx: Ctx) {
+  return handleApi(async () => {
+    const user = await requireUser();
+    const { slug } = await ctx.params;
+    const project = await prisma.project.findFirst({ where: { userId: user.id, slug, deletedAt: null } });
+    if (!project) return jsonError('Not found', 404);
+
+    const parsed = AppendBody.safeParse(await req.json().catch(() => ({})));
+    if (!parsed.success) return jsonError('Invalid body', 400, { issues: parsed.error.flatten() });
+
+    const term = parsed.data.term.trim();
+    const existing = await prisma.keyword.findFirst({
+      where: { projectId: project.id, term: { equals: term, mode: 'insensitive' } },
+    });
+    if (existing) return jsonOk({ added: false, keyword: existing });
+
+    const created = await prisma.keyword.create({
+      data: { projectId: project.id, term, matchMode: parsed.data.matchMode },
+    });
+    return jsonOk({ added: true, keyword: created });
+  });
+}

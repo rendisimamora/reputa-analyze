@@ -1,12 +1,17 @@
 /**
  * End-to-end scan for a single project — with live progress tracking.
  *
- *  1. QUEUED      — scan row created
- *  2. COLLECTING  — RSS + search-page across all sources (percent driven by sourcesDone/total)
- *  3. PERSISTING  — write new mentions
- *  4. ANALYZING   — OpenAI sentiment on each new/unanalyzed mention (percent driven by analyzed/toAnalyze)
- *  5. SCORING     — reputation + alerts
- *  6. DONE        — completed
+ * ARCHITECTURE (post-refactor):
+ *   Next.js API   →  enqueueScan()        ← only creates a QUEUED ScanRun row.
+ *   Scheduler VM  →  claimAndExecuteOne() ← atomically claims & runs the pipeline.
+ *
+ * Pipeline stages (mirrored in scanProgress.ts):
+ *   1. QUEUED      — row inserted, waiting for a worker to claim
+ *   2. COLLECTING  — RSS + search-page across all sources
+ *   3. PERSISTING  — write new mentions to DB
+ *   4. ANALYZING   — OpenAI sentiment on new/unanalyzed mentions
+ *   5. SCORING     — reputation + alerts + AI summary
+ *   6. DONE
  */
 import { pLimit } from '@/lib/pLimit';
 import { prisma } from '@/lib/prisma';
@@ -16,6 +21,8 @@ import { analyzeSentiment } from './sentimentAnalyzer';
 import { computeReputation } from './reputationScore';
 import { evaluateAlerts } from './alertEngine';
 import { regenerateAiSummary } from './aiSummary';
+import { regenerateInsightContent } from './insightContent';
+import { regenerateInsightKeyword } from './insightKeyword';
 import { env } from '@/lib/env';
 import * as progress from './scanProgress';
 import type { ScanTrigger } from '@prisma/client';
@@ -28,8 +35,13 @@ export interface ScanResult {
   score: number | null;
 }
 
-/** Starts a scan in the background. Returns the new scanRunId immediately. */
-export async function startScan(projectId: string, trigger: ScanTrigger = 'MANUAL'): Promise<string> {
+/**
+ * Enqueue a scan. Inserts a QUEUED ScanRun row and returns its id IMMEDIATELY.
+ * The actual work is picked up by the scheduler worker (see src/scheduler/runner.ts).
+ *
+ * This is the ONLY function Next.js routes should call.
+ */
+export async function enqueueScan(projectId: string, trigger: ScanTrigger = 'MANUAL'): Promise<string> {
   const project = await prisma.project.findFirst({
     where: { id: projectId, deletedAt: null },
     include: { keywords: true },
@@ -37,92 +49,123 @@ export async function startScan(projectId: string, trigger: ScanTrigger = 'MANUA
   if (!project) throw new Error('Project not found or has been deleted');
   if (!project.keywords.length) throw new Error('Project has no keywords');
 
+  // De-dupe: if there's already an unclaimed QUEUED row for this project, return it.
+  const existing = await prisma.scanRun.findFirst({
+    where: { projectId, status: 'QUEUED', claimedAt: null },
+    orderBy: { startedAt: 'desc' },
+  });
+  if (existing) return existing.id;
+
   const scan = await prisma.scanRun.create({
-    data: { projectId, trigger, status: 'RUNNING' },
+    data: {
+      projectId,
+      trigger,
+      status: 'QUEUED',
+      progressJson: {
+        stage: 'QUEUED',
+        percent: 0,
+        label: 'Menunggu worker…',
+        totalSources: ALL_SOURCES.length,
+        sourcesDone: 0,
+        fetched: 0,
+        toAnalyze: 0,
+        analyzed: 0,
+      },
+    },
   });
-
-  progress.start(projectId, scan.id, ALL_SOURCES.length);
-
-  // Fire-and-forget. Inner code persists errors to ScanRun + scanProgress,
-  // but log unexpected exceptions to console so they're visible during dev.
-  void executeScan(
-    project.id,
-    project.name,
-    project.keywords.map((k) => k.term),
-    project.keywords[0]?.matchMode ?? 'ANY',
-    scan.id,
-  ).catch((err) => {
-    console.error('[scanRunner] executeScan threw an unhandled error:', err);
-  });
-
   return scan.id;
 }
 
-/** Synchronous wrapper used by the cron scheduler (awaits the full pipeline). */
-export async function runScan(projectId: string, trigger: ScanTrigger = 'MANUAL'): Promise<ScanResult> {
-  const scanRunId = await startScan(projectId, trigger);
-  // poll until done
-  while (true) {
-    const p = progress.get(scanRunId);
-    if (!p) break;
-    if (p.stage === 'DONE' || p.stage === 'FAILED') break;
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  const final = await prisma.scanRun.findUnique({ where: { id: scanRunId } });
-  return {
-    scanRunId,
-    newMentions: final?.newMentions ?? 0,
-    analyzed: final?.analyzed ?? 0,
-    errors: final?.errors ?? 0,
-    score: progress.get(scanRunId)?.score ?? null,
-  };
+/**
+ * Atomically claim the oldest QUEUED scan, then execute it.
+ * Returns the result, or null if there's nothing to claim.
+ *
+ * Called by the standalone scheduler process (PM2 on VM). NEVER call this from Next.js.
+ */
+export async function claimAndExecuteOne(): Promise<ScanResult | null> {
+  // Pick the oldest unclaimed QUEUED row.
+  const candidate = await prisma.scanRun.findFirst({
+    where: { status: 'QUEUED', claimedAt: null },
+    orderBy: { startedAt: 'asc' },
+    select: { id: true },
+  });
+  if (!candidate) return null;
+
+  // Atomic claim: only succeeds if the row is STILL QUEUED + unclaimed.
+  // If another worker beat us, count will be 0 — we just bail and try again next tick.
+  const claimed = await prisma.scanRun.updateMany({
+    where: { id: candidate.id, status: 'QUEUED', claimedAt: null },
+    data: { status: 'RUNNING', claimedAt: new Date() },
+  });
+  if (claimed.count === 0) return null;
+
+  return executeScan(candidate.id);
 }
 
-async function executeScan(
-  projectId: string,
-  projectName: string,
-  keywords: string[],
-  matchMode: 'ANY' | 'ALL',
-  scanRunId: string,
-) {
+/**
+ * Execute one already-claimed scan (status: RUNNING). Called by the worker.
+ */
+export async function executeScan(scanRunId: string): Promise<ScanResult> {
+  const row = await prisma.scanRun.findUnique({ where: { id: scanRunId } });
+  if (!row) throw new Error(`ScanRun ${scanRunId} not found`);
+
+  const project = await prisma.project.findFirst({
+    where: { id: row.projectId, deletedAt: null },
+    include: { keywords: true },
+  });
+  if (!project) throw new Error(`Project ${row.projectId} not found`);
+  if (!project.keywords.length) throw new Error('Project has no keywords');
+
+  await progress.start(project.id, scanRunId, ALL_SOURCES.length);
+
   let newMentions = 0;
   let analyzed = 0;
   let errors = 0;
+  let score: number | null = null;
 
-  console.log(`[scan ${scanRunId}] START — project="${projectName}" keywords=${JSON.stringify(keywords)}`);
+  const keywords = project.keywords.map((k) => k.term);
+  const matchMode = project.keywords[0]?.matchMode ?? 'ANY';
+
+  console.log(`[scan ${scanRunId}] START — project="${project.name}" keywords=${JSON.stringify(keywords)}`);
 
   try {
     // ---- COLLECTING ----
-    progress.update(scanRunId, { stage: 'COLLECTING', label: 'Mengambil data dari 16 media…' });
-    console.log(`[scan ${scanRunId}] COLLECTING from ${keywords.length} keyword(s)…`);
+    console.log(`[scan ${scanRunId}] COLLECTING from ${ALL_SOURCES.length} sources…`);
+    await progress.update(scanRunId, { stage: 'COLLECTING', label: 'Mengambil data dari 16 media…' });
 
     const report = await collectAll({
       keywords,
       matchMode,
-      projectId,
+      projectId: project.id,
       fetchFullContent: true,
-      onSourceDone: (sourceKey, fetched) => {
-        const cur = progress.get(scanRunId);
-        if (!cur) return;
-        progress.update(scanRunId, {
-          sourcesDone: cur.sourcesDone + 1,
-          fetched: cur.fetched + fetched,
-          label: `Mengambil data — ${sourceKey} (${cur.sourcesDone + 1}/${cur.totalSources})`,
-        });
+      onSourceDone: (sourceKey, fetched, error) => {
+        const tag = error ? `ERR(${error.slice(0, 60)})` : `+${fetched}`;
+        console.log(`[scan ${scanRunId}]   source ${sourceKey} done — ${tag}`);
+        // Fire-and-forget DB write — collector doesn't await this anyway.
+        void (async () => {
+          const cur = await progress.get(scanRunId);
+          if (!cur) return;
+          await progress.update(scanRunId, {
+            sourcesDone: cur.sourcesDone + 1,
+            fetched: cur.fetched + fetched,
+            label: `Mengambil data — ${sourceKey} (${cur.sourcesDone + 1}/${cur.totalSources})`,
+          });
+        })();
       },
     });
     const fetched = report.articles.length;
+    console.log(`[scan ${scanRunId}] COLLECTING done — ${fetched} unique article(s) after dedupe`);
 
     // ---- PERSISTING ----
-    progress.update(scanRunId, { stage: 'PERSISTING', label: `Menyimpan ${fetched} mention…` });
     console.log(`[scan ${scanRunId}] PERSISTING ${fetched} article(s)…`);
+    await progress.update(scanRunId, { stage: 'PERSISTING', label: `Menyimpan ${fetched} mention…` });
 
     for (const a of report.articles) {
       try {
         const result = await prisma.mention.upsert({
-          where: { projectId_urlHash: { projectId, urlHash: a.urlHash } },
+          where: { projectId_urlHash: { projectId: project.id, urlHash: a.urlHash } },
           create: {
-            projectId,
+            projectId: project.id,
             sourceKey: a.source,
             sourceName: a.sourceName,
             title: a.title.slice(0, 500),
@@ -155,17 +198,17 @@ async function executeScan(
 
     // ---- ANALYZING ----
     const toAnalyzeRows = await prisma.mention.findMany({
-      where: { projectId, analyzedAt: null, crawlStatus: { in: ['OK', 'PARTIAL'] } },
+      where: { projectId: project.id, analyzedAt: null, crawlStatus: { in: ['OK', 'PARTIAL'] } },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
-    progress.update(scanRunId, {
+    console.log(`[scan ${scanRunId}] ANALYZING ${toAnalyzeRows.length} mention(s) with AI…`);
+    await progress.update(scanRunId, {
       stage: 'ANALYZING',
       toAnalyze: toAnalyzeRows.length,
       analyzed: 0,
       label: `Menganalisa sentimen ${toAnalyzeRows.length} mention…`,
     });
-    console.log(`[scan ${scanRunId}] ANALYZING ${toAnalyzeRows.length} mention(s) with AI…`);
 
     const limit = pLimit(3);
     const analyzerErrors: string[] = [];
@@ -174,7 +217,7 @@ async function executeScan(
         limit(async () => {
           try {
             const result = await analyzeSentiment({
-              subject: projectName,
+              subject: project.name,
               title: m.title,
               snippet: m.snippet,
               rawContent: m.rawContent,
@@ -196,9 +239,9 @@ async function executeScan(
               },
             });
             analyzed++;
-            const cur = progress.get(scanRunId);
+            const cur = await progress.get(scanRunId);
             if (cur) {
-              progress.update(scanRunId, {
+              await progress.update(scanRunId, {
                 analyzed,
                 label: `Menganalisa sentimen — ${analyzed}/${cur.toAnalyze}`,
               });
@@ -213,30 +256,39 @@ async function executeScan(
       ),
     );
 
-    // Surface analyzer error to scan progress so the UI can show it
     if (analyzerErrors.length > 0 && analyzed === 0) {
-      progress.update(scanRunId, {
+      await progress.update(scanRunId, {
         error: `Semua analisa sentimen gagal. Contoh error: ${analyzerErrors[0]}`,
       });
     }
 
     // ---- SCORING ----
-    progress.update(scanRunId, { stage: 'SCORING', label: 'Menghitung reputation score…' });
     console.log(`[scan ${scanRunId}] SCORING — analyzed=${analyzed}, errors=${errors}`);
-    const all = await prisma.mention.findMany({ where: { projectId } });
+    await progress.update(scanRunId, { stage: 'SCORING', label: 'Menghitung reputation score…' });
+    const all = await prisma.mention.findMany({ where: { projectId: project.id } });
     const rep = computeReputation(all);
-    await evaluateAlerts(projectId, rep.score);
+    await evaluateAlerts(project.id, rep.score);
+    score = rep.score;
 
-    // Regenerate AI summary once per scan (only if we got new analyzed data)
     if (analyzed > 0) {
-      progress.update(scanRunId, { label: 'Membuat AI executive summary…' });
-      await regenerateAiSummary(projectId).catch((e) => {
-        console.warn('[scanRunner] AI summary regen failed:', e instanceof Error ? e.message : e);
-      });
+      await progress.update(scanRunId, { label: 'Membuat AI executive summary…' });
+      // Run summary + both insights in parallel — they all hit the LLM independently
+      // and we don't want to wait for one before kicking off the next.
+      await Promise.allSettled([
+        regenerateAiSummary(project.id).catch((e) => {
+          console.warn('[scanRunner] AI summary regen failed:', e instanceof Error ? e.message : e);
+        }),
+        regenerateInsightContent(project.id).catch((e) => {
+          console.warn('[scanRunner] insight content regen failed:', e instanceof Error ? e.message : e);
+        }),
+        regenerateInsightKeyword(project.id).catch((e) => {
+          console.warn('[scanRunner] insight keyword regen failed:', e instanceof Error ? e.message : e);
+        }),
+      ]);
     }
 
     await prisma.project.update({
-      where: { id: projectId },
+      where: { id: project.id },
       data: { lastScanAt: new Date() },
     });
 
@@ -257,19 +309,21 @@ async function executeScan(
       },
     });
 
-    progress.finish(scanRunId, rep.score);
+    await progress.finish(scanRunId, rep.score);
     console.log(`[scan ${scanRunId}] DONE — score=${rep.score} (${rep.category})`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[scan ${scanRunId}] FAILED at stage:`, msg, err);
+    console.error(`[scan ${scanRunId}] FAILED:`, msg);
     await prisma.scanRun
       .update({
         where: { id: scanRunId },
         data: { finishedAt: new Date(), status: 'FAILED', message: msg, errors: errors + 1 },
       })
       .catch(() => {});
-    progress.fail(scanRunId, msg);
+    await progress.fail(scanRunId, msg);
   }
+
+  return { scanRunId, newMentions, analyzed, errors, score };
 }
 
 export const SCAN_DEFAULTS = { concurrency: env.crawlerConcurrency };

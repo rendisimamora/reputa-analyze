@@ -61,21 +61,11 @@ export default function ProjectDashboard({ params }: { params: Promise<{ slug: s
   }, [load]);
 
   async function checkInitialProgress() {
-    // Resume polling only if there is a *genuinely* active scan. Ignore stale
-    // RUNNING rows (worker died, or no worker is online yet) so we don't show
-    // a phantom "Scanning…" spinner on every dashboard mount.
-    try {
-      const r = await fetch(`/api/projects/${slug}/scan`);
-      const j = await r.json();
-      const p = j.progress;
-      if (!p) return;
-      const STALE_MS = 90 * 1000;
-      if (typeof p.updatedAt === 'number' && Date.now() - p.updatedAt > STALE_MS) return;
-      if (p.stage === 'DONE' || p.stage === 'FAILED') return;
-      setProgress(p);
-      startPolling(p.scanRunId);
-    } catch {
-      /* silent — no active scan or worker offline */
+    const r = await fetch(`/api/projects/${slug}/scan`);
+    const j = await r.json();
+    if (j.progress && j.progress.stage !== 'DONE' && j.progress.stage !== 'FAILED') {
+      setProgress(j.progress);
+      startPolling(j.progress.scanRunId);
     }
   }
 
@@ -170,11 +160,7 @@ export default function ProjectDashboard({ params }: { params: Promise<{ slug: s
         </div>
         <button onClick={runScan} className="btn-primary" disabled={!!scanning}>
           <RefreshCw size={16} className={scanning ? 'animate-spin' : ''} />
-          {scanning
-            ? progress?.stage === 'QUEUED'
-              ? 'Menunggu worker…'
-              : `Scanning… ${progress?.percent ?? 0}%`
-            : 'Scan now'}
+          {scanning ? `Scanning… ${progress?.percent ?? 0}%` : 'Scan now'}
         </button>
       </div>
 

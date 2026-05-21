@@ -52,13 +52,6 @@ model Project {
   aiSummaryAt       DateTime?
   aiSummaryError    String?   @db.Text
 
-  // Cached AI Insight (content counter-ideas + keyword suggestions). Regenerated
-  // after each successful scan (parallel with aiSummary) and on manual click.
-  insightContentJson  Json?
-  insightKeywordJson  Json?
-  insightGeneratedAt  DateTime?
-  insightError        String?  @db.Text
-
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   keywords  Keyword[]
   mentions  Mention[]
@@ -189,20 +182,17 @@ model ScanRun {
   projectId    String   @db.Uuid
   trigger      ScanTrigger
   startedAt    DateTime @default(now())
-  claimedAt    DateTime?
   finishedAt   DateTime?
   fetched      Int      @default(0)
   newMentions  Int      @default(0)
   analyzed     Int      @default(0)
   errors       Int      @default(0)
-  status       ScanStatus @default(QUEUED)
+  status       ScanStatus @default(RUNNING)
   message      String?  @db.Text
-  progressJson Json?
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId, startedAt])
-  @@index([status, claimedAt])
 }
 
 enum ScanTrigger {
@@ -212,7 +202,6 @@ enum ScanTrigger {
 }
 
 enum ScanStatus {
-  QUEUED
   RUNNING
   SUCCESS
   PARTIAL

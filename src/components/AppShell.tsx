@@ -15,6 +15,7 @@ import {
   Radar,
   Search,
   Settings,
+  Sparkles,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -122,6 +123,7 @@ export default function AppShell({
         { href: `/projects/${projectSlug}`, label: 'Dashboard', icon: BarChart3, badge: 0 },
         { href: `/projects/${projectSlug}/mentions`, label: 'Mentions', icon: Search, badge: 0 },
         { href: `/projects/${projectSlug}/alerts`, label: 'Alerts', icon: Bell, badge: currentUnack },
+        { href: `/projects/${projectSlug}/insight`, label: 'Insight', icon: Sparkles, badge: 0 },
         { href: `/projects/${projectSlug}/report`, label: 'Report', icon: FileText, badge: 0 },
         { href: `/projects/${projectSlug}/crawl`, label: 'Crawl Logs', icon: Activity, badge: 0 },
         { href: `/projects/${projectSlug}/settings`, label: 'Settings', icon: Settings, badge: 0 },

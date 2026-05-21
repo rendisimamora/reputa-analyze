@@ -1,16 +1,24 @@
 /**
- * In-memory progress tracker for active scans.
+ * DB-backed progress tracker for active scans.
  *
- * Trade-off: works only in a single Node process. For multi-instance / serverless,
- * swap with Redis (same shape) — every progress mutation goes through `update()`.
+ * Previously this was an in-memory Map living inside the Next.js process. After
+ * decoupling the scanner into a standalone scheduler process (PM2 on VM), both
+ * the worker and the Next.js GET endpoint need to see the same state — so we
+ * persist progress to ScanRun.progressJson on every update.
+ *
+ * Update frequency is bounded (~16 source ticks + ~100 analyzer ticks per scan),
+ * which is fine for direct DB writes. If this becomes a hotspot we can debounce
+ * inside the worker or move to Redis.
  */
+import { prisma } from '@/lib/prisma';
+import type { Prisma } from '@prisma/client';
 
 export type ScanStage =
   | 'QUEUED'
-  | 'COLLECTING'   // hitting RSS + search pages across 16 sources
-  | 'PERSISTING'   // writing new mentions to DB
-  | 'ANALYZING'    // OpenAI sentiment on unanalyzed mentions
-  | 'SCORING'      // reputation + alerts
+  | 'COLLECTING'
+  | 'PERSISTING'
+  | 'ANALYZING'
+  | 'SCORING'
   | 'DONE'
   | 'FAILED';
 
@@ -41,15 +49,31 @@ const STAGE_WEIGHTS: Record<ScanStage, [number, number]> = {
   FAILED: [0, 0],
 };
 
-// Persist the in-memory store across Next.js dev HMR module reloads.
-// Without this, the Map gets recreated empty on every code change → GET
-// /scan polling falls back to "last ScanRun row" which shows static 0%.
-const globalForProgress = globalThis as unknown as { __reputaScanProgress?: Map<string, ScanProgressState> };
-const store: Map<string, ScanProgressState> =
-  globalForProgress.__reputaScanProgress ?? new Map<string, ScanProgressState>();
-if (process.env.NODE_ENV !== 'production') globalForProgress.__reputaScanProgress = store;
+function recompute(state: ScanProgressState): ScanProgressState {
+  const next = { ...state, updatedAt: Date.now() };
+  if (next.stage === 'COLLECTING' && next.totalSources > 0) {
+    const [lo, hi] = STAGE_WEIGHTS.COLLECTING;
+    next.percent = Math.min(hi, lo + ((hi - lo) * next.sourcesDone) / next.totalSources);
+  } else if (next.stage === 'ANALYZING' && next.toAnalyze > 0) {
+    const [lo, hi] = STAGE_WEIGHTS.ANALYZING;
+    next.percent = Math.min(hi, lo + ((hi - lo) * next.analyzed) / next.toAnalyze);
+  } else {
+    next.percent = STAGE_WEIGHTS[next.stage][0];
+  }
+  next.percent = Math.round(next.percent);
+  return next;
+}
 
-export function start(projectId: string, scanRunId: string, totalSources: number): ScanProgressState {
+async function write(scanRunId: string, state: ScanProgressState) {
+  await prisma.scanRun.update({
+    where: { id: scanRunId },
+    data: { progressJson: state as unknown as Prisma.InputJsonValue },
+  }).catch((e) => {
+    console.warn('[scanProgress] write failed:', e instanceof Error ? e.message : e);
+  });
+}
+
+export async function start(projectId: string, scanRunId: string, totalSources: number): Promise<ScanProgressState> {
   const state: ScanProgressState = {
     scanRunId,
     projectId,
@@ -64,47 +88,69 @@ export function start(projectId: string, scanRunId: string, totalSources: number
     startedAt: Date.now(),
     updatedAt: Date.now(),
   };
-  store.set(scanRunId, state);
-  // also index by projectId for the latest
-  store.set(`project:${projectId}`, state);
+  await write(scanRunId, state);
   return state;
 }
 
-export function update(scanRunId: string, patch: Partial<ScanProgressState>) {
-  const cur = store.get(scanRunId);
+export async function update(scanRunId: string, patch: Partial<ScanProgressState>): Promise<void> {
+  const cur = await get(scanRunId);
   if (!cur) return;
-  const next: ScanProgressState = { ...cur, ...patch, updatedAt: Date.now() };
+  const merged: ScanProgressState = { ...cur, ...patch };
+  const next = recompute(merged);
+  await write(scanRunId, next);
+}
 
-  // auto-compute percent from stage + sub-progress
-  if (patch.stage && patch.percent === undefined) {
-    const [lo, hi] = STAGE_WEIGHTS[next.stage];
-    next.percent = lo;
+export async function finish(scanRunId: string, score?: number | null): Promise<void> {
+  const cur = await get(scanRunId);
+  if (!cur) return;
+  const next: ScanProgressState = { ...cur, stage: 'DONE', percent: 100, label: 'Selesai', score: score ?? null, updatedAt: Date.now() };
+  await write(scanRunId, next);
+}
+
+export async function fail(scanRunId: string, error: string): Promise<void> {
+  const cur = await get(scanRunId);
+  if (!cur) return;
+  const next: ScanProgressState = { ...cur, stage: 'FAILED', percent: 0, label: 'Gagal', error, updatedAt: Date.now() };
+  await write(scanRunId, next);
+}
+
+export async function get(scanRunId: string): Promise<ScanProgressState | undefined> {
+  const row = await prisma.scanRun.findUnique({
+    where: { id: scanRunId },
+    select: { id: true, projectId: true, progressJson: true, status: true, startedAt: true },
+  });
+  if (!row) return undefined;
+  if (row.progressJson && typeof row.progressJson === 'object' && !Array.isArray(row.progressJson)) {
+    return row.progressJson as unknown as ScanProgressState;
   }
-  if (next.stage === 'COLLECTING' && next.totalSources > 0) {
-    const [lo, hi] = STAGE_WEIGHTS.COLLECTING;
-    next.percent = Math.min(hi, lo + ((hi - lo) * next.sourcesDone) / next.totalSources);
-  } else if (next.stage === 'ANALYZING' && next.toAnalyze > 0) {
-    const [lo, hi] = STAGE_WEIGHTS.ANALYZING;
-    next.percent = Math.min(hi, lo + ((hi - lo) * next.analyzed) / next.toAnalyze);
-  }
-  next.percent = Math.round(next.percent);
-
-  store.set(scanRunId, next);
-  store.set(`project:${next.projectId}`, next);
+  // Synthesize from status if no progressJson yet
+  const stage: ScanStage =
+    row.status === 'QUEUED' ? 'QUEUED' :
+    row.status === 'RUNNING' ? 'COLLECTING' :
+    row.status === 'SUCCESS' || row.status === 'PARTIAL' ? 'DONE' :
+    'FAILED';
+  return {
+    scanRunId: row.id,
+    projectId: row.projectId,
+    stage,
+    percent: stage === 'DONE' ? 100 : 0,
+    label: stage === 'QUEUED' ? 'Menunggu worker…' : stage === 'DONE' ? 'Selesai' : 'Berjalan…',
+    totalSources: 16,
+    sourcesDone: 0,
+    fetched: 0,
+    toAnalyze: 0,
+    analyzed: 0,
+    startedAt: row.startedAt.getTime(),
+    updatedAt: Date.now(),
+  };
 }
 
-export function finish(scanRunId: string, score?: number | null) {
-  update(scanRunId, { stage: 'DONE', percent: 100, label: 'Selesai', score });
-}
-
-export function fail(scanRunId: string, error: string) {
-  update(scanRunId, { stage: 'FAILED', percent: 0, label: 'Gagal', error });
-}
-
-export function get(scanRunId: string): ScanProgressState | undefined {
-  return store.get(scanRunId);
-}
-
-export function getLatestForProject(projectId: string): ScanProgressState | undefined {
-  return store.get(`project:${projectId}`);
+export async function getLatestForProject(projectId: string): Promise<ScanProgressState | undefined> {
+  const row = await prisma.scanRun.findFirst({
+    where: { projectId },
+    orderBy: { startedAt: 'desc' },
+    select: { id: true },
+  });
+  if (!row) return undefined;
+  return get(row.id);
 }
