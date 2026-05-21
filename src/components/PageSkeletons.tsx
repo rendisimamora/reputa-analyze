@@ -6,12 +6,12 @@
  * what gives the app its SPA-like feel.
  */
 
-function Bar({ className = '' }: { className?: string }) {
-  return <div className={`bg-ink-700/60 rounded ${className}`} />;
+function Bar({ className = '', style }: { className?: string; style?: React.CSSProperties }) {
+  return <div className={`bg-ink-700/60 rounded ${className}`} style={style} />;
 }
 
-function Card({ children, className = '' }: { children?: React.ReactNode; className?: string }) {
-  return <div className={`card p-4 ${className}`}>{children}</div>;
+function Card({ children, className = '', style }: { children?: React.ReactNode; className?: string; style?: React.CSSProperties }) {
+  return <div className={`card p-4 ${className}`} style={style}>{children}</div>;
 }
 
 export function PageHeaderSkeleton() {
