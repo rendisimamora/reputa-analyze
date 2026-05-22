@@ -19,15 +19,55 @@ import { prisma } from '@/lib/prisma';
 import { aiClient, aiModel, providerSupportsJsonMode, hasAiConfigured } from '@/lib/aiClient';
 import type { Mention } from '@prisma/client';
 
+export type ContentEmotion =
+  | 'hope' | 'pride' | 'empathy' | 'curiosity' | 'indignation' | 'reassurance' | 'inspiration';
+
+export type ContentFormat =
+  | 'tiktok-reel' | 'instagram-reel' | 'twitter-thread' | 'youtube-short'
+  | 'youtube-long' | 'podcast-cut' | 'linkedin-post' | 'opinion-piece' | 'livestream';
+
+export type CounterTechnique =
+  | 'reframe'              // ganti sudut pandang, bukan denial
+  | 'contextualize'        // tambah konteks data/sejarah yang absent dari berita
+  | 'third-party-validate' // pakai voice pihak ke-3 kredibel (akademisi, lembaga)
+  | 'steel-man'            // akui kritik valid dulu, lalu nuance
+  | 'data-overlay'         // angka/statistik yang patahkan klaim
+  | 'human-interest'       // kasus konkret penerima manfaat
+  | 'transparency'         // tunjukin proses internal, bukti dokumentasi
+  | 'comparative';         // bandingin sama benchmark relevan
+
 export interface ContentIdea {
-  id: string;                  // stable UUID assigned server-side; used by /complete endpoint
+  id: string;
   title: string;
+  /** Ringkasan 1-paragraf — kayak elevator pitch ke creator */
   concept: string;
   influencerType: string;
   issueCounter: string;
   tone: 'informational' | 'emotional' | 'data-driven' | 'human-interest';
-  completed?: boolean;         // user marked this idea as done
-  completedAt?: string;        // ISO timestamp when completed (for sorting/history)
+
+  // ---- Strategic brief fields ----
+  /** Narrative angle / POV inti dari konten. */
+  angle?: string;
+  /** Opening 3-detik / hook scroll-stopper. */
+  hook?: string;
+  /** Emosi primer yang ditargetkan. */
+  emotion?: ContentEmotion;
+  /** Format konten spesifik. */
+  format?: ContentFormat;
+  /** Counter technique — gimana cara meng-counter, bukan defensive. */
+  counterTechnique?: CounterTechnique;
+  /** Pergeseran persepsi: dari X → ke Y. */
+  targetPerception?: { from: string; to: string };
+  /** 3-5 talking points kongkret untuk creator. */
+  keyPoints?: string[];
+  /** Call-to-action: apa yang audience harapkan rasa/lakukan setelah konsumsi konten. */
+  cta?: string;
+  /** Potensi risiko / backfire — kasih PR readiness. */
+  risk?: string;
+
+  // ---- Lifecycle ----
+  completed?: boolean;
+  completedAt?: string;
 }
 
 export interface CachedInsightContent {
@@ -205,6 +245,10 @@ export function readCachedInsightContent(p: ProjectShape): CachedInsightContent 
   };
 }
 
+const EMOTIONS: ContentEmotion[] = ['hope', 'pride', 'empathy', 'curiosity', 'indignation', 'reassurance', 'inspiration'];
+const FORMATS: ContentFormat[] = ['tiktok-reel', 'instagram-reel', 'twitter-thread', 'youtube-short', 'youtube-long', 'podcast-cut', 'linkedin-post', 'opinion-piece', 'livestream'];
+const COUNTER_TECHNIQUES: CounterTechnique[] = ['reframe', 'contextualize', 'third-party-validate', 'steel-man', 'data-overlay', 'human-interest', 'transparency', 'comparative'];
+
 async function callLlm(subject: string, negatives: Mention[], resolvedIssues: string[]): Promise<Omit<ContentIdea, 'id' | 'completed' | 'completedAt'>[]> {
   const samples = negatives.slice(0, 20).map((m) => ({
     source: m.sourceName,
@@ -217,34 +261,58 @@ async function callLlm(subject: string, negatives: Mention[], resolvedIssues: st
   const completion = await aiClient().chat.completions.create({
     model: aiModel(),
     ...(providerSupportsJsonMode() ? { response_format: { type: 'json_object' as const } } : {}),
-    temperature: 0.7,
+    temperature: 0.75,
     messages: [
       {
         role: 'system',
-        content: `Anda strategist content marketing untuk humas politik/korporat Indonesia.
-Berdasarkan daftar mention NEGATIF tentang subjek "${subject}", buat 5-7 IDE KONTEN yang bisa diberikan ke influencer/KOL untuk meng-counter atau menyeimbangkan narasi tersebut.
+        content: `Anda adalah Senior Content Strategist + Crisis Communications planner untuk subjek publik/korporat Indonesia.
+Tugas Anda: BERIKAN BRIEF KONTEN siap-eksekusi yang influencer/KOL bisa langsung ambil dan produksi tanpa mikir tambahan.
 
-IDE-IDE harus:
-- Bukan denial/spin yang mudah dipatahkan. Tujuannya melengkapi konteks, menjelaskan kebijakan, atau menonjolkan capaian nyata.
-- Cocok untuk dieksekusi influencer (bisa 1 reel TikTok, 1 thread, 1 podcast cut, dll).
-- Beragam tone (data-driven, emotional, human-interest, informational).
+KONTEKS: Berikut adalah mention NEGATIF terbaru tentang "${subject}". Buat 5-7 BRIEF KONTEN untuk meng-counter / menyeimbangkan narasi tersebut.
 
-WAJIB JANGAN BUAT IDE untuk issue-issue berikut (sudah selesai / sudah di-counter sebelumnya):
+PRINSIP WAJIB:
+1. JANGAN defensive, JANGAN denial. Yang dipakai: reframe konteks, data overlay, third-party validation, atau human-interest. Steel-man kritik dulu kalau perlu — itu lebih kredibel.
+2. Setiap brief harus action-able: creator harus tau persis hook, format, dan talking points-nya.
+3. Beragam tone & emotion — jangan semua data-driven, jangan semua emotional.
+4. Beragam format — campur reel, thread, podcast cut, opinion piece. Format harus cocok sama tone dan emotion-nya.
+5. Setiap brief MERUJUK ke issue spesifik dari berita di bawah (di field issueCounter).
+
+EXCLUSION — JANGAN buat brief untuk issue-issue berikut (sudah selesai / sudah di-counter sebelumnya):
 ${resolvedIssues.length ? resolvedIssues.map((r) => `- ${r}`).join('\n') : '(belum ada)'}
 
-Output JSON SAJA dengan shape:
+OUTPUT JSON SAJA. Shape:
 {
   "ideas": [
     {
-      "title": "judul ide singkat (max 60 karakter)",
-      "concept": "2-3 kalimat menjelaskan angle & narasi kunci",
-      "influencerType": "tipe influencer yang cocok (mis: 'finfluencer', 'jurnalis ekonomi', 'creator policy explainer')",
-      "issueCounter": "issue negatif spesifik yang di-counter (singkat, max 70 karakter)",
-      "tone": "informational|emotional|data-driven|human-interest"
+      "title": "judul brief singkat & catchy (max 60 char)",
+      "concept": "1 paragraf elevator pitch ke creator (3-4 kalimat)",
+      "issueCounter": "issue negatif spesifik yang di-counter (max 70 char)",
+      "tone": "informational|emotional|data-driven|human-interest",
+
+      "angle": "POV / narrative angle inti — 1 kalimat tajam",
+      "hook": "Opening 3-detik / scroll-stopper. Tulis verbatim, bukan deskripsi. Contoh: 'Bea Cukai naikkan tarif? Tunggu, ini yang gak ada di berita.'",
+      "emotion": "hope|pride|empathy|curiosity|indignation|reassurance|inspiration",
+      "format": "tiktok-reel|instagram-reel|twitter-thread|youtube-short|youtube-long|podcast-cut|linkedin-post|opinion-piece|livestream",
+      "counterTechnique": "reframe|contextualize|third-party-validate|steel-man|data-overlay|human-interest|transparency|comparative",
+      "targetPerception": {
+        "from": "persepsi publik saat ini (5-10 kata)",
+        "to": "persepsi yang ingin dibangun (5-10 kata)"
+      },
+      "keyPoints": [
+        "3-5 talking point kongkret, masing-masing 1 kalimat",
+        "Bukan jargon — bahasa creator pop"
+      ],
+      "cta": "Apa yang audience harapkan rasa/pikir/lakukan setelah konsumsi konten",
+      "influencerType": "Tipe creator + alasan kenapa cocok (mis: 'finfluencer ekonomi makro karena kredibel di topik fiskal')",
+      "risk": "1 kalimat potensi backfire / kritik balik yang harus diantisipasi"
     }
   ]
 }
-HANYA JSON, tanpa teks pembuka/penutup, tanpa markdown.`,
+
+ATURAN OUTPUT:
+- HANYA JSON, tanpa pembuka/penutup, tanpa markdown fence.
+- Bahasa Indonesia. Tone professional tapi natural — bukan birokratis.
+- Setiap brief harus UNIK dari yang lain (jangan repeat angle/format/emotion yang sama).`,
       },
       { role: 'user', content: JSON.stringify(samples) },
     ],
@@ -260,12 +328,30 @@ HANYA JSON, tanpa teks pembuka/penutup, tanpa markdown.`,
   const ideas = Array.isArray(parsed.ideas) ? parsed.ideas : [];
   return ideas
     .filter((x): x is Record<string, unknown> => typeof x === 'object' && x !== null)
-    .map((x) => ({
-      title: String(x.title ?? '').slice(0, 120),
-      concept: String(x.concept ?? '').slice(0, 600),
-      influencerType: String(x.influencerType ?? '').slice(0, 120),
-      issueCounter: String(x.issueCounter ?? '').slice(0, 200),
-      tone: (TONES.includes(x.tone as ContentIdea['tone']) ? x.tone : 'informational') as ContentIdea['tone'],
-    }))
+    .map((x) => {
+      const tp = x.targetPerception as { from?: unknown; to?: unknown } | undefined;
+      const kp = Array.isArray(x.keyPoints) ? x.keyPoints : [];
+      return {
+        title: String(x.title ?? '').slice(0, 120),
+        concept: String(x.concept ?? '').slice(0, 800),
+        influencerType: String(x.influencerType ?? '').slice(0, 200),
+        issueCounter: String(x.issueCounter ?? '').slice(0, 200),
+        tone: (TONES.includes(x.tone as ContentIdea['tone']) ? x.tone : 'informational') as ContentIdea['tone'],
+        angle: x.angle ? String(x.angle).slice(0, 400) : undefined,
+        hook: x.hook ? String(x.hook).slice(0, 400) : undefined,
+        emotion: (EMOTIONS.includes(x.emotion as ContentEmotion) ? x.emotion : undefined) as ContentEmotion | undefined,
+        format: (FORMATS.includes(x.format as ContentFormat) ? x.format : undefined) as ContentFormat | undefined,
+        counterTechnique: (COUNTER_TECHNIQUES.includes(x.counterTechnique as CounterTechnique) ? x.counterTechnique : undefined) as CounterTechnique | undefined,
+        targetPerception: tp && typeof tp === 'object'
+          ? { from: String(tp.from ?? '').slice(0, 200), to: String(tp.to ?? '').slice(0, 200) }
+          : undefined,
+        keyPoints: kp
+          .filter((p): p is string => typeof p === 'string')
+          .map((p) => p.slice(0, 250))
+          .slice(0, 6),
+        cta: x.cta ? String(x.cta).slice(0, 300) : undefined,
+        risk: x.risk ? String(x.risk).slice(0, 300) : undefined,
+      };
+    })
     .filter((i) => i.title && i.concept);
 }

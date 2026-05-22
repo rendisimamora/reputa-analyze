@@ -1,13 +1,22 @@
 'use client';
 
 import { use, useCallback, useEffect, useMemo, useState } from 'react';
-import { Lightbulb, RefreshCw, Sparkles, Tag, AlertTriangle, ChevronDown, Plus, Loader2, CheckCircle2, RotateCcw } from 'lucide-react';
+import { Lightbulb, RefreshCw, Sparkles, Tag, AlertTriangle, ChevronDown, ChevronUp, Plus, Loader2, CheckCircle2, RotateCcw, Megaphone, Target, Zap, ListChecks, ArrowRight, Shield, Heart } from 'lucide-react';
 import { clsx } from 'clsx';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shape mirrors src/services/insight{Content,Keyword}.ts. Kept inline so the
 // page can render without pulling server-only modules into the client bundle.
 // ─────────────────────────────────────────────────────────────────────────────
+type ContentEmotion =
+  | 'hope' | 'pride' | 'empathy' | 'curiosity' | 'indignation' | 'reassurance' | 'inspiration';
+type ContentFormat =
+  | 'tiktok-reel' | 'instagram-reel' | 'twitter-thread' | 'youtube-short'
+  | 'youtube-long' | 'podcast-cut' | 'linkedin-post' | 'opinion-piece' | 'livestream';
+type CounterTechnique =
+  | 'reframe' | 'contextualize' | 'third-party-validate' | 'steel-man'
+  | 'data-overlay' | 'human-interest' | 'transparency' | 'comparative';
+
 interface ContentIdea {
   id: string;
   title: string;
@@ -15,6 +24,15 @@ interface ContentIdea {
   influencerType: string;
   issueCounter: string;
   tone: 'informational' | 'emotional' | 'data-driven' | 'human-interest';
+  angle?: string;
+  hook?: string;
+  emotion?: ContentEmotion;
+  format?: ContentFormat;
+  counterTechnique?: CounterTechnique;
+  targetPerception?: { from: string; to: string };
+  keyPoints?: string[];
+  cta?: string;
+  risk?: string;
   completed?: boolean;
   completedAt?: string;
 }
@@ -245,6 +263,7 @@ function ContentList({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [showCompleted, setShowCompleted] = useState(false);
+  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
 
   const completedCount = ideas.filter((i) => i.completed).length;
   const visibleIdeas = showCompleted ? ideas : ideas.filter((i) => !i.completed);
@@ -266,18 +285,27 @@ function ContentList({
     }
   }
 
+  function toggleOpen(id: string) {
+    setOpenIds((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   if (regenerating) {
     return (
       <div className="card p-8 text-center text-ink-300">
         <Loader2 size={20} className="animate-spin mx-auto mb-2 text-accent-400" />
-        Mengenerate ide konten…
+        Mengenerate brief konten…
       </div>
     );
   }
   if (ideas.length === 0) {
     return (
       <div className="card p-8 text-center text-ink-400">
-        Belum ada ide konten — pastikan project sudah punya mention NEGATIF, lalu klik Regenerate.
+        Belum ada brief konten — pastikan project sudah punya mention NEGATIF, lalu klik Regenerate.
       </div>
     );
   }
@@ -301,66 +329,240 @@ function ContentList({
         </div>
       )}
 
-      <div className="grid gap-3 md:grid-cols-2">
-        {visibleIdeas.map((idea) => {
-          const isDone = !!idea.completed;
-          return (
-            <div
-              key={idea.id}
-              className={clsx(
-                'card p-4 transition relative',
-                isDone
-                  ? 'opacity-60 border-success-500/30 bg-success-500/5'
-                  : 'hover:border-accent-500/40',
-              )}
-            >
-              <div className="flex items-start justify-between gap-3 mb-2">
-                <div className={clsx('text-base font-semibold leading-snug', isDone ? 'text-ink-300' : 'text-ink-100')}>
-                  {isDone && <CheckCircle2 size={16} className="inline mr-1.5 -mt-0.5 text-success-500" />}
-                  {idea.title}
-                </div>
-                <span className={clsx('text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border whitespace-nowrap', TONE_STYLES[idea.tone])}>
-                  {idea.tone}
-                </span>
-              </div>
-              <p className={clsx('text-sm mb-3 leading-relaxed', isDone ? 'text-ink-400' : 'text-ink-300')}>
-                {idea.concept}
-              </p>
-              <div className="space-y-1.5 text-xs mb-3">
-                <div className="flex items-start gap-2">
-                  <span className="text-ink-500 shrink-0 w-24">Counter issue:</span>
-                  <span className={clsx('flex-1', isDone ? 'text-ink-400 line-through' : 'text-warning-400')}>{idea.issueCounter}</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <span className="text-ink-500 shrink-0 w-24">Influencer:</span>
-                  <span className={clsx('flex-1', isDone ? 'text-ink-400' : 'text-ink-200')}>{idea.influencerType}</span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => toggleComplete(idea)}
-                disabled={busy === idea.id}
-                className={clsx(
-                  'w-full text-xs py-1.5 px-3 rounded-md border transition flex items-center justify-center gap-1.5',
-                  isDone
-                    ? 'border-ink-700 hover:border-ink-600 text-ink-300'
-                    : 'border-success-500/40 bg-success-500/5 hover:bg-success-500/10 text-success-500',
-                )}
-              >
-                {busy === idea.id ? (
-                  <Loader2 size={12} className="animate-spin" />
-                ) : isDone ? (
-                  <RotateCcw size={12} />
-                ) : (
-                  <CheckCircle2 size={12} />
-                )}
-                {isDone ? 'Mark as Open' : 'Mark as Complete'}
-              </button>
-            </div>
-          );
-        })}
+      <div className="grid gap-3">
+        {visibleIdeas.map((idea) => (
+          <ContentIdeaCard
+            key={idea.id}
+            idea={idea}
+            open={openIds.has(idea.id)}
+            onToggleOpen={() => toggleOpen(idea.id)}
+            onToggleComplete={() => toggleComplete(idea)}
+            busy={busy === idea.id}
+          />
+        ))}
       </div>
     </>
+  );
+}
+
+const EMOTION_STYLES: Record<ContentEmotion, string> = {
+  hope: 'bg-success-500/10 text-success-500 border-success-500/30',
+  pride: 'bg-warning-500/10 text-warning-500 border-warning-500/30',
+  empathy: 'bg-pink-500/10 text-pink-400 border-pink-500/30',
+  curiosity: 'bg-accent-500/10 text-accent-400 border-accent-500/30',
+  indignation: 'bg-danger-500/10 text-danger-500 border-danger-500/30',
+  reassurance: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
+  inspiration: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
+};
+
+const FORMAT_LABEL: Record<ContentFormat, string> = {
+  'tiktok-reel': 'TikTok Reel',
+  'instagram-reel': 'IG Reel',
+  'twitter-thread': 'X / Twitter Thread',
+  'youtube-short': 'YT Short',
+  'youtube-long': 'YT Long-form',
+  'podcast-cut': 'Podcast Cut',
+  'linkedin-post': 'LinkedIn Post',
+  'opinion-piece': 'Opinion Piece',
+  'livestream': 'Livestream',
+};
+
+const COUNTER_LABEL: Record<CounterTechnique, string> = {
+  reframe: 'Reframe',
+  contextualize: 'Contextualize',
+  'third-party-validate': 'Third-party Validation',
+  'steel-man': 'Steel-man',
+  'data-overlay': 'Data Overlay',
+  'human-interest': 'Human Interest',
+  transparency: 'Transparency',
+  comparative: 'Comparative',
+};
+
+function ContentIdeaCard({
+  idea,
+  open,
+  onToggleOpen,
+  onToggleComplete,
+  busy,
+}: {
+  idea: ContentIdea;
+  open: boolean;
+  onToggleOpen: () => void;
+  onToggleComplete: () => void;
+  busy: boolean;
+}) {
+  const isDone = !!idea.completed;
+  const hasBrief =
+    !!idea.angle || !!idea.hook || (idea.keyPoints?.length ?? 0) > 0 || !!idea.cta ||
+    !!idea.targetPerception || !!idea.counterTechnique || !!idea.format || !!idea.emotion;
+
+  return (
+    <div
+      className={clsx(
+        'card transition relative',
+        isDone
+          ? 'opacity-60 border-success-500/30 bg-success-500/5'
+          : 'hover:border-accent-500/40',
+      )}
+    >
+      {/* Header */}
+      <div className="p-4 pb-3.5">
+        <div className="flex items-start justify-between gap-3 mb-2.5">
+          <div className={clsx('text-[15px] font-semibold leading-snug flex-1 tracking-tight', isDone ? 'text-ink-300' : 'text-ink-100')}>
+            {isDone && <CheckCircle2 size={14} className="inline mr-1.5 -mt-0.5 text-success-500" />}
+            {idea.title}
+          </div>
+          <span className={clsx('text-[10px] font-medium uppercase tracking-[0.08em] px-2 py-0.5 rounded-full border whitespace-nowrap shrink-0', TONE_STYLES[idea.tone])}>
+            {idea.tone}
+          </span>
+        </div>
+
+        {/* Mini metadata row */}
+        {(idea.format || idea.emotion || idea.counterTechnique) && (
+          <div className="flex flex-wrap items-center gap-1.5 mb-3">
+            {idea.format && (
+              <span className="text-[10px] font-medium uppercase tracking-[0.08em] px-2 py-0.5 rounded-full border border-ink-700 text-ink-300 flex items-center gap-1">
+                <Megaphone size={10} /> {FORMAT_LABEL[idea.format]}
+              </span>
+            )}
+            {idea.emotion && (
+              <span className={clsx('text-[10px] font-medium uppercase tracking-[0.08em] px-2 py-0.5 rounded-full border flex items-center gap-1', EMOTION_STYLES[idea.emotion])}>
+                <Heart size={10} /> {idea.emotion}
+              </span>
+            )}
+            {idea.counterTechnique && (
+              <span className="text-[10px] font-medium uppercase tracking-[0.08em] px-2 py-0.5 rounded-full border border-ink-700 text-ink-300 flex items-center gap-1">
+                <Shield size={10} /> {COUNTER_LABEL[idea.counterTechnique]}
+              </span>
+            )}
+          </div>
+        )}
+
+        <p className={clsx('text-[13px] leading-relaxed', isDone ? 'text-ink-400' : 'text-ink-300')}>
+          {idea.concept}
+        </p>
+
+        <div className="mt-3 space-y-1.5 text-[12px]">
+          <div className="flex items-start gap-2">
+            <span className="text-ink-500 shrink-0 w-20 text-[11px] uppercase tracking-[0.05em] mt-0.5">Counter issue</span>
+            <span className={clsx('flex-1', isDone ? 'text-ink-400 line-through' : 'text-warning-400')}>{idea.issueCounter}</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <span className="text-ink-500 shrink-0 w-20 text-[11px] uppercase tracking-[0.05em] mt-0.5">Influencer</span>
+            <span className={clsx('flex-1', isDone ? 'text-ink-400' : 'text-ink-200')}>{idea.influencerType}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Expandable strategic brief */}
+      {hasBrief && (
+        <button
+          type="button"
+          onClick={onToggleOpen}
+          className="w-full px-4 py-2 border-t border-ink-800 flex items-center justify-between text-xs text-ink-300 hover:bg-ink-800/30 transition"
+        >
+          <span className="flex items-center gap-1.5 font-medium">
+            <Sparkles size={11} className="text-accent-400" />
+            {open ? 'Tutup brief detail' : 'Lihat brief detail'}
+          </span>
+          {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        </button>
+      )}
+
+      {hasBrief && open && (
+        <div className="px-4 py-3.5 border-t border-ink-800 bg-ink-900/40 space-y-3.5">
+          {idea.angle && (
+            <Section icon={<Target size={12} />} label="Narrative angle">
+              <p>{idea.angle}</p>
+            </Section>
+          )}
+
+          {idea.hook && (
+            <Section icon={<Zap size={12} className="text-warning-500" />} label="Hook opening (3 detik)">
+              <p className="text-ink-100 italic border-l-2 border-warning-500/40 pl-3 py-0.5">
+                &ldquo;{idea.hook}&rdquo;
+              </p>
+            </Section>
+          )}
+
+          {idea.targetPerception && (
+            <Section icon={<ArrowRight size={12} />} label="Pergeseran persepsi">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-2 py-1 rounded-md bg-danger-500/10 text-danger-400 border border-danger-500/20 text-[12px]">
+                  {idea.targetPerception.from}
+                </span>
+                <ArrowRight size={11} className="text-ink-500 shrink-0" />
+                <span className="px-2 py-1 rounded-md bg-success-500/10 text-success-500 border border-success-500/20 text-[12px]">
+                  {idea.targetPerception.to}
+                </span>
+              </div>
+            </Section>
+          )}
+
+          {idea.keyPoints && idea.keyPoints.length > 0 && (
+            <Section icon={<ListChecks size={12} />} label="Talking points">
+              <ul className="space-y-1.5">
+                {idea.keyPoints.map((point, idx) => (
+                  <li key={idx} className="flex items-start gap-2.5">
+                    <span className="text-accent-400 shrink-0 text-[11px] font-semibold tabular-nums mt-px w-4">{String(idx + 1).padStart(2, '0')}</span>
+                    <span className="flex-1">{point}</span>
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
+
+          {idea.cta && (
+            <Section icon={<Megaphone size={12} className="text-accent-400" />} label="Audience CTA">
+              <p>{idea.cta}</p>
+            </Section>
+          )}
+
+          {idea.risk && (
+            <Section icon={<AlertTriangle size={12} className="text-warning-500" />} label="Potensi risiko">
+              <p className="text-warning-400">{idea.risk}</p>
+            </Section>
+          )}
+        </div>
+      )}
+
+      {/* Footer: Mark as Complete */}
+      <div className="px-4 pb-4">
+        <button
+          type="button"
+          onClick={onToggleComplete}
+          disabled={busy}
+          className={clsx(
+            'w-full text-xs py-1.5 px-3 rounded-md border transition flex items-center justify-center gap-1.5',
+            isDone
+              ? 'border-ink-700 hover:border-ink-600 text-ink-300'
+              : 'border-success-500/40 bg-success-500/5 hover:bg-success-500/10 text-success-500',
+          )}
+        >
+          {busy ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : isDone ? (
+            <RotateCcw size={12} />
+          ) : (
+            <CheckCircle2 size={12} />
+          )}
+          {isDone ? 'Mark as Open' : 'Mark as Complete'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Section({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-ink-500 mb-1.5 flex items-center gap-1.5">
+        {icon} {label}
+      </div>
+      <div className="text-[13px] leading-relaxed text-ink-200">
+        {children}
+      </div>
+    </div>
   );
 }
 
