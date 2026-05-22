@@ -42,6 +42,24 @@ export async function GET(req: NextRequest, ctx: Ctx) {
         orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
         take,
         skip,
+        // Trim payload: exclude rawContent (full article body — bisa puluhan KB
+        // per row), urlHash/contentHash (internal dedupe), author, matchedKeywords,
+        // toxicity/hateSpeech/fakeNews/topic/aiSummary (gak ditampilkan di tabel).
+        // Total: ~10x lebih kecil per row.
+        select: {
+          id: true,
+          title: true,
+          snippet: true,
+          url: true,
+          sourceName: true,
+          sourceKey: true,
+          publishedAt: true,
+          sentiment: true,
+          sentimentScore: true,
+          emotion: true,
+          collectionMethod: true,
+          crawlStatus: true,
+        },
       }),
       prisma.mention.count({ where }),
       prisma.mention.findMany({

@@ -46,6 +46,19 @@ export async function GET(req: NextRequest, ctx: Ctx) {
         orderBy: { createdAt: 'desc' },
         take,
         skip,
+        // Trim payload — exclude projectId, scanRunId, retryCount, and other
+        // fields the crawl logs table doesn't display.
+        select: {
+          id: true,
+          sourceKey: true,
+          method: true,
+          url: true,
+          status: true,
+          httpStatus: true,
+          message: true,
+          durationMs: true,
+          createdAt: true,
+        },
       }),
       prisma.crawlLog.count({ where }),
       prisma.crawlLog.findMany({

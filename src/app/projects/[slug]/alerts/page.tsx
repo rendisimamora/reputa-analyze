@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useEffect, useState } from 'react';
+import { use, useEffect, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import { Bell, Check, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
 import { AlertsSkeleton } from '@/components/PageSkeletons';
@@ -36,7 +36,16 @@ export default function AlertsPage({ params }: { params: Promise<{ slug: string 
   const { slug } = use(params);
   const [alerts, setAlerts] = useState<Alert[] | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  useEffect(() => { void load(); /* eslint-disable-next-line */ }, []);
+  // Guard against React StrictMode's double-mount in dev — otherwise the
+  // alerts list is fetched twice on every page open. The ref persists across
+  // the double-invoke so the second call is a no-op.
+  const didInit = useRef(false);
+  useEffect(() => {
+    if (didInit.current) return;
+    didInit.current = true;
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function load() {
     const r = await fetch(`/api/projects/${slug}/alerts`);

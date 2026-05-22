@@ -25,7 +25,14 @@ export default function ReportPage({ params }: { params: Promise<{ slug: string 
   const [loading, setLoading] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { void generate(); /* eslint-disable-next-line */ }, []);
+  // StrictMode guard — generate report once on mount.
+  const didInit = useRef(false);
+  useEffect(() => {
+    if (didInit.current) return;
+    didInit.current = true;
+    void generate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function generate() {
     setLoading(true);

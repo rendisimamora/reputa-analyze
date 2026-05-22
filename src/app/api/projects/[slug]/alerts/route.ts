@@ -15,6 +15,17 @@ export async function GET(_req: NextRequest, ctx: Ctx) {
       where: { projectId: project.id },
       orderBy: { createdAt: 'desc' },
       take: 100,
+      // Explicit select — drops projectId (UI never reads it).
+      select: {
+        id: true,
+        type: true,
+        severity: true,
+        title: true,
+        message: true,
+        acknowledged: true,
+        createdAt: true,
+        payload: true,
+      },
     });
     return jsonOk({ alerts });
   });

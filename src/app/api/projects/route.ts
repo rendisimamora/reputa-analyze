@@ -15,10 +15,23 @@ const CreateBody = z.object({
 export async function GET() {
   return handleApi(async () => {
     const user = await requireUser();
+    // Trim heavy fields: insightContentJson + insightKeywordJson are now sizable
+    // JSON blobs, aiExecutive/aiRecommendation are long text, telegramBotToken
+    // is sensitive. None of those are needed by the projects card list or the
+    // sidebar dropdown — both only use id, slug, name, description, lastScanAt,
+    // keywords[].term, and _count.
     const projects = await prisma.project.findMany({
       where: { userId: user.id, deletedAt: null },
-      include: { _count: { select: { mentions: true, alerts: true } }, keywords: true },
       orderBy: { updatedAt: 'desc' },
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        description: true,
+        lastScanAt: true,
+        _count: { select: { mentions: true, alerts: true } },
+        keywords: { select: { term: true } },
+      },
     });
 
     const unack = await prisma.alert.groupBy({

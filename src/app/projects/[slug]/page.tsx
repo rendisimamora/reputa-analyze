@@ -52,13 +52,19 @@ export default function ProjectDashboard({ params }: { params: Promise<{ slug: s
     }
   }, [slug]);
 
+  // StrictMode guard — initial dashboard fetch + initial-progress probe happen
+  // exactly once. Cleanup still runs on real unmount via pollRef.current check.
+  const didInit = useRef(false);
   useEffect(() => {
+    if (didInit.current) {
+      return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    }
+    didInit.current = true;
     void load(true);
-    // resume polling if there's an active scan
     void checkInitialProgress();
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [load]);
+  }, []);
 
   async function checkInitialProgress() {
     // Resume polling only if there is a *genuinely* active scan. Ignore stale

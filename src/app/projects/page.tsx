@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight, Loader2, Radar, Trash2 } from 'lucide-react';
 
@@ -32,7 +32,14 @@ export default function ProjectsList() {
     setProjects(j.projects ?? []);
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  // StrictMode guard — projects list fetched once on mount.
+  const didInit = useRef(false);
+  useEffect(() => {
+    if (didInit.current) return;
+    didInit.current = true;
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function deleteProject(slug: string) {
     setDeletingId(slug);

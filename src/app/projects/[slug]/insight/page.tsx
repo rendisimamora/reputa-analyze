@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useCallback, useEffect, useMemo, useState } from 'react';
+import { use, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Lightbulb, RefreshCw, Sparkles, Tag, AlertTriangle, ChevronDown, ChevronUp, Plus, Loader2, CheckCircle2, RotateCcw, Megaphone, Target, Zap, ListChecks, ArrowRight, Shield, Heart } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -46,7 +46,6 @@ interface KeywordSuggestion {
 
 interface CachedContent { ideas: ContentIdea[]; resolvedIssues?: string[]; generatedAt: string; error?: string | null }
 interface CachedKeyword { suggestions: KeywordSuggestion[]; generatedAt: string; error?: string | null }
-interface InsightPayload { content: CachedContent | null; keyword: CachedKeyword | null }
 
 type View = 'content' | 'keyword';
 
@@ -89,50 +88,78 @@ const CAT_LABEL: Record<KeywordSuggestion['category'], string> = {
 export default function InsightPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
   const [view, setView] = useState<View>('content');
-  const [data, setData] = useState<InsightPayload | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [regen, setRegen] = useState<View | 'all' | null>(null);
+  // Lazy per-view caches — each view fetches independently the first time it's
+  // opened. Switching tabs re-uses the cache (no re-fetch) unless the user hits
+  // Regenerate or the page is reloaded.
+  const [contentCache, setContentCache] = useState<CachedContent | null>(null);
+  const [keywordCache, setKeywordCache] = useState<CachedKeyword | null>(null);
+  const [loadingView, setLoadingView] = useState<View | null>(null);
+  const [regen, setRegen] = useState<View | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
 
-  const load = useCallback(async () => {
+  // SYNC guards so concurrent calls (StrictMode double-invoke, HMR, fast clicks)
+  // don't trigger duplicate fetches. State-based check (contentCache/keywordCache)
+  // isn't enough because setState is async — the second invocation sees null cache.
+  const inFlight = useRef<Set<View>>(new Set());
+  const fetched = useRef<Set<View>>(new Set());
+
+  // Fetch one view's data on demand. Idempotent across re-mounts.
+  const loadView = useCallback(async (v: View, force = false) => {
+    if (!force) {
+      if (inFlight.current.has(v) || fetched.current.has(v)) return;
+    }
+    inFlight.current.add(v);
+    setLoadingView(v);
     setError(null);
     try {
-      const r = await fetch(`/api/projects/${slug}/insight`);
+      const r = await fetch(`/api/projects/${slug}/insight/${v}`);
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
         setError(j.error ?? `Gagal memuat insight (${r.status})`);
         return;
       }
-      setData(await r.json());
+      const j = await r.json();
+      fetched.current.add(v);
+      if (v === 'content') setContentCache(j.content ?? null);
+      else setKeywordCache(j.keyword ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Gagal memuat insight');
     } finally {
-      setLoading(false);
+      inFlight.current.delete(v);
+      setLoadingView(null);
     }
   }, [slug]);
 
-  useEffect(() => { void load(); }, [load]);
+  // StrictMode guard — fetch the active view exactly once on mount.
+  // View-switching fetches are handled inline in the dropdown's onClick to
+  // avoid double-firing effects in dev.
+  const didInit = useRef(false);
+  useEffect(() => {
+    if (didInit.current) return;
+    didInit.current = true;
+    void loadView(view);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  async function regenerate(type: View | 'all') {
+  async function regenerate(type: View) {
     setRegen(type);
     setError(null);
     try {
-      const r = await fetch(`/api/projects/${slug}/insight`, {
+      const r = await fetch(`/api/projects/${slug}/insight/${type}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ type }),
       });
       const j = await r.json();
       if (!r.ok) {
         setError(j.error ?? 'Regenerate gagal');
         return;
       }
-      // Merge — POST may return only the regenerated half
-      setData((cur) => ({
-        content: j.content ?? cur?.content ?? null,
-        keyword: j.keyword ?? cur?.keyword ?? null,
-      }));
+      // Regenerate returns fresh data — treat as already-fetched so we don't
+      // immediately refetch on next render.
+      fetched.current.add(type);
+      if (type === 'content') setContentCache(j.content ?? null);
+      else setKeywordCache(j.keyword ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Regenerate gagal');
     } finally {
@@ -143,14 +170,15 @@ export default function InsightPage({ params }: { params: Promise<{ slug: string
   const current = VIEWS.find((v) => v.id === view)!;
   const ActiveIcon = current.icon;
   const generatedAt = useMemo(() => {
-    const t = view === 'content' ? data?.content?.generatedAt : data?.keyword?.generatedAt;
+    const t = view === 'content' ? contentCache?.generatedAt : keywordCache?.generatedAt;
     if (!t) return null;
     const d = new Date(t);
     if (d.getTime() === 0) return null;
     return d.toLocaleString('id-ID');
-  }, [view, data]);
+  }, [view, contentCache, keywordCache]);
 
-  const lastError = view === 'content' ? data?.content?.error : data?.keyword?.error;
+  const lastError = view === 'content' ? contentCache?.error : keywordCache?.error;
+  const loading = loadingView === view && (view === 'content' ? !contentCache : !keywordCache);
 
   return (
     <>
@@ -196,7 +224,12 @@ export default function InsightPage({ params }: { params: Promise<{ slug: string
                 <button
                   key={v.id}
                   type="button"
-                  onClick={() => { setView(v.id); setOpen(false); }}
+                  onClick={() => {
+                    setView(v.id);
+                    setOpen(false);
+                    // Lazy-fetch the newly active view if it isn't cached yet.
+                    void loadView(v.id);
+                  }}
                   className={clsx(
                     'w-full text-left px-3 py-2.5 flex items-start gap-2 transition',
                     active ? 'bg-accent-500/10 text-accent-300' : 'hover:bg-ink-800/60',
@@ -238,13 +271,13 @@ export default function InsightPage({ params }: { params: Promise<{ slug: string
         </div>
       ) : view === 'content' ? (
         <ContentList
-          ideas={data?.content?.ideas ?? []}
+          ideas={contentCache?.ideas ?? []}
           regenerating={regen === 'content'}
           slug={slug}
-          onChange={(next) => setData((cur) => ({ content: next, keyword: cur?.keyword ?? null }))}
+          onChange={(next) => setContentCache(next)}
         />
       ) : (
-        <KeywordList suggestions={data?.keyword?.suggestions ?? []} regenerating={regen === 'keyword'} slug={slug} />
+        <KeywordList suggestions={keywordCache?.suggestions ?? []} regenerating={regen === 'keyword'} slug={slug} />
       )}
     </>
   );
