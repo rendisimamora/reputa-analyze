@@ -35,18 +35,23 @@ export default function ProjectDashboard({ params }: { params: Promise<{ slug: s
   const [regenSummary, setRegenSummary] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const load = useCallback(async (withAi = false) => {
-    const url = `/api/projects/${slug}/dashboard${withAi ? '?ai=1' : ''}`;
+  // Fetch the 3 dashboard sections in PARALLEL — wall time becomes max(t1,t2,t3)
+  // instead of sum. Each endpoint also uses tighter queries (groupBy where possible)
+  // so the *individual* aggregations are faster than the old 2000-row scan.
+  const load = useCallback(async (_unused = false) => {
+    setError(null);
     try {
-      const r = await fetch(url);
-      if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        setError(j.error ? `Gagal memuat dashboard: ${j.error}` : 'Gagal memuat dashboard');
+      const [summary, charts, recent] = await Promise.all([
+        fetch(`/api/projects/${slug}/dashboard/summary`).then((r) => r.json()),
+        fetch(`/api/projects/${slug}/dashboard/charts`).then((r) => r.json()),
+        fetch(`/api/projects/${slug}/dashboard/recent`).then((r) => r.json()),
+      ]);
+      if (summary?.error || charts?.error || recent?.error) {
+        setError(`Gagal memuat dashboard: ${summary?.error ?? charts?.error ?? recent?.error}`);
         return;
       }
-      const json = await r.json();
-      setData(json);
-      setError(null);
+      // Combine in the same shape DashboardData expects.
+      setData({ ...summary, ...charts, ...recent } as DashboardData);
     } catch (e) {
       setError(e instanceof Error ? `Gagal memuat dashboard: ${e.message}` : 'Gagal memuat dashboard');
     }
