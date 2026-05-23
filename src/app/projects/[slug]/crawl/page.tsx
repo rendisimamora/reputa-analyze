@@ -6,6 +6,7 @@ import { CrawlLogsSkeleton } from '@/components/PageSkeletons';
 import { ChevronLeft, ChevronRight, Loader2, RefreshCw, X } from 'lucide-react';
 import { clsx } from 'clsx';
 import { apiFetch } from '@/lib/api-client';
+import { safeUrl } from '@/lib/safe-url';
 
 interface CrawlLog {
   id: string;
@@ -203,7 +204,7 @@ export default function CrawlLogsPage({ params }: { params: Promise<{ slug: stri
                   <td><CrawlStatusBadge value={l.status} /></td>
                   <td className="text-ink-300 tabular-nums">{l.httpStatus ?? '—'}</td>
                   <td className="text-ink-400 tabular-nums">{l.durationMs ? `${l.durationMs}ms` : '—'}</td>
-                  <td className="max-w-xs truncate"><a href={l.url} target="_blank" rel="noreferrer noopener" className="text-accent-400 hover:underline">{l.url}</a></td>
+                  <td className="max-w-xs truncate"><a href={safeUrl(l.url)} target="_blank" rel="noreferrer noopener" className="text-accent-400 hover:underline">{l.url}</a></td>
                   <td className="text-ink-400 max-w-xs truncate">{l.message ?? '—'}</td>
                 </tr>
               ))}

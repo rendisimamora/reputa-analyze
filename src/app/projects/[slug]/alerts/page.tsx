@@ -5,6 +5,7 @@ import { clsx } from 'clsx';
 import { Bell, Check, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
 import { AlertsSkeleton } from '@/components/PageSkeletons';
 import { apiFetch } from '@/lib/api-client';
+import { safeUrl } from '@/lib/safe-url';
 
 interface AlertSample {
   id: string;
@@ -152,7 +153,7 @@ export default function AlertsPage({ params }: { params: Promise<{ slug: string 
                     {samples.map((s) => (
                       <a
                         key={s.id}
-                        href={s.url}
+                        href={safeUrl(s.url)}
                         target="_blank"
                         rel="noreferrer noopener"
                         className="flex items-start gap-3 px-3 py-2 rounded-md hover:bg-ink-800/50 transition group"

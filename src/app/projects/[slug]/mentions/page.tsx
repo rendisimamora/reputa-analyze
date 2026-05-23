@@ -6,6 +6,7 @@ import { MentionsTableSkeleton } from '@/components/PageSkeletons';
 import { ChevronLeft, ChevronRight, ExternalLink, Loader2, RefreshCw, X } from 'lucide-react';
 import { clsx } from 'clsx';
 import { apiFetch } from '@/lib/api-client';
+import { safeUrl } from '@/lib/safe-url';
 
 interface Mention {
   id: string;
@@ -225,7 +226,7 @@ export default function MentionsPage({ params }: { params: Promise<{ slug: strin
                   <td className="text-ink-300">{m.emotion ?? '—'}</td>
                   <td className="text-ink-400 text-xs">{m.collectionMethod}</td>
                   <td><CrawlStatusBadge value={m.crawlStatus} /></td>
-                  <td><a href={m.url} target="_blank" rel="noreferrer noopener" className="text-accent-400 hover:text-accent-500"><ExternalLink size={14}/></a></td>
+                  <td><a href={safeUrl(m.url)} target="_blank" rel="noreferrer noopener" className="text-accent-400 hover:text-accent-500"><ExternalLink size={14}/></a></td>
                 </tr>
               ))}
             </tbody>

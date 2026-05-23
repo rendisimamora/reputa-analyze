@@ -5,6 +5,7 @@ import { FileDown, FileText, RefreshCw } from 'lucide-react';
 import { SentimentTrendChart, MentionTrendChart, SourceBarChart } from '@/components/charts';
 import { SentimentBadge } from '@/components/SentimentBadge';
 import { apiFetch } from '@/lib/api-client';
+import { safeUrl } from '@/lib/safe-url';
 
 interface ReportData {
   project: { name: string };
@@ -107,7 +108,7 @@ export default function ReportPage({ params }: { params: Promise<{ slug: string 
               {report.recent.slice(0, 15).map((m) => (
                 <div key={m.id} className="border-b border-ink-800 last:border-0 pb-2">
                   <div className="flex items-center gap-2 text-xs text-ink-400"><span>{m.sourceName}</span>·<span>{m.publishedAt ? new Date(m.publishedAt).toLocaleDateString('id-ID') : '—'}</span><SentimentBadge value={m.sentiment}/></div>
-                  <a href={m.url} target="_blank" rel="noreferrer noopener" className="text-sm font-medium text-accent-400 hover:underline">{m.title}</a>
+                  <a href={safeUrl(m.url)} target="_blank" rel="noreferrer noopener" className="text-sm font-medium text-accent-400 hover:underline">{m.title}</a>
                   {m.aiSummary && <div className="text-xs text-ink-300 mt-1">{m.aiSummary}</div>}
                 </div>
               ))}

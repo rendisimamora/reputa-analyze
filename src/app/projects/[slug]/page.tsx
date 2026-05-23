@@ -10,6 +10,7 @@ import { DashboardSkeleton } from '@/components/DashboardSkeleton';
 import { HelpTooltip } from '@/components/Tooltip';
 import { AlertTriangle, ArrowRight, BarChart3, BrainCircuit, MessageSquare, RefreshCw, ShieldAlert, ThumbsDown, ThumbsUp, Sparkles } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
+import { safeUrl } from '@/lib/safe-url';
 
 interface DashboardData {
   project: { id: string; name: string; description: string | null; lastScanAt: string | null };
@@ -370,7 +371,7 @@ export default function ProjectDashboard({ params }: { params: Promise<{ slug: s
           </div>
           <div className="max-h-72 overflow-auto scrollbar space-y-2">
             {data?.recent.length ? data.recent.slice(0, 10).map((m) => (
-              <a key={m.id} href={m.url} target="_blank" rel="noreferrer noopener" className="block rounded-md hover:bg-ink-800/60 p-2 -m-2">
+              <a key={m.id} href={safeUrl(m.url)} target="_blank" rel="noreferrer noopener" className="block rounded-md hover:bg-ink-800/60 p-2 -m-2">
                 <div className="flex items-center gap-2 text-xs text-ink-400"><span>{m.sourceName}</span>·<span>{m.publishedAt ? new Date(m.publishedAt).toLocaleDateString('id-ID') : '—'}</span><SentimentBadge value={m.sentiment} /></div>
                 <div className="text-sm text-ink-100 line-clamp-2">{m.title}</div>
               </a>
