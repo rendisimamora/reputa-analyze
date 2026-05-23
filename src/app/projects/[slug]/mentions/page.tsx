@@ -5,6 +5,7 @@ import { SentimentBadge, CrawlStatusBadge } from '@/components/SentimentBadge';
 import { MentionsTableSkeleton } from '@/components/PageSkeletons';
 import { ChevronLeft, ChevronRight, ExternalLink, Loader2, RefreshCw, X } from 'lucide-react';
 import { clsx } from 'clsx';
+import { apiFetch } from '@/lib/api-client';
 
 interface Mention {
   id: string;
@@ -73,7 +74,7 @@ export default function MentionsPage({ params }: { params: Promise<{ slug: strin
       if (filters.to) qs.set('to', filters.to);
 
       try {
-        const r = await fetch(`/api/projects/${slug}/mentions?${qs.toString()}`);
+        const r = await apiFetch(`/api/projects/${slug}/mentions?${qs.toString()}`);
         const j = await r.json();
         setItems(j.items ?? []);
         setTotal(j.total ?? 0);

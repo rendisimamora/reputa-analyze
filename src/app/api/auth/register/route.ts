@@ -1,7 +1,10 @@
+/**
+ * Register → creates user, returns JWT token (same shape as login).
+ */
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
-import { getSession, hashPassword } from '@/lib/auth';
+import { signAccessToken, hashPassword } from '@/lib/auth';
 import { handleApi, jsonError, jsonOk } from '@/lib/apiHelpers';
 
 const Body = z.object({
@@ -26,10 +29,11 @@ export async function POST(req: NextRequest) {
         passwordHash: await hashPassword(parsed.data.password),
       },
     });
-    const session = await getSession();
-    session.userId = user.id;
-    await session.save();
 
-    return jsonOk({ id: user.id, email: user.email, name: user.name });
+    const token = await signAccessToken(user.id);
+    return jsonOk({
+      user: { id: user.id, email: user.email, name: user.name },
+      token,
+    });
   });
 }

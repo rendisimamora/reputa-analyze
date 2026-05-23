@@ -3,6 +3,7 @@
 import { use, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Lightbulb, RefreshCw, Sparkles, Tag, AlertTriangle, ChevronDown, ChevronUp, Plus, Loader2, CheckCircle2, RotateCcw, Megaphone, Target, Zap, ListChecks, ArrowRight, Shield, Heart } from 'lucide-react';
 import { clsx } from 'clsx';
+import { apiFetch } from '@/lib/api-client';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shape mirrors src/services/insight{Content,Keyword}.ts. Kept inline so the
@@ -113,7 +114,7 @@ export default function InsightPage({ params }: { params: Promise<{ slug: string
     setLoadingView(v);
     setError(null);
     try {
-      const r = await fetch(`/api/projects/${slug}/insight/${v}`);
+      const r = await apiFetch(`/api/projects/${slug}/insight/${v}`);
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
         setError(j.error ?? `Gagal memuat insight (${r.status})`);
@@ -146,7 +147,7 @@ export default function InsightPage({ params }: { params: Promise<{ slug: string
     setRegen(type);
     setError(null);
     try {
-      const r = await fetch(`/api/projects/${slug}/insight/${type}`, {
+      const r = await apiFetch(`/api/projects/${slug}/insight/${type}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
       });
@@ -304,7 +305,7 @@ function ContentList({
   async function toggleComplete(idea: ContentIdea) {
     setBusy(idea.id);
     try {
-      const r = await fetch(`/api/projects/${slug}/insight/complete`, {
+      const r = await apiFetch(`/api/projects/${slug}/insight/complete`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ ideaId: idea.id, completed: !idea.completed }),
@@ -614,7 +615,7 @@ function KeywordList({
   async function addKeyword(kw: string) {
     setAdding(kw);
     try {
-      const r = await fetch(`/api/projects/${slug}/keywords`, {
+      const r = await apiFetch(`/api/projects/${slug}/keywords`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ term: kw }),

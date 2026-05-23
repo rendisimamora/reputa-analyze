@@ -9,6 +9,7 @@ import { ScanProgressBar, type ScanProgress } from '@/components/ScanProgressBar
 import { DashboardSkeleton } from '@/components/DashboardSkeleton';
 import { HelpTooltip } from '@/components/Tooltip';
 import { AlertTriangle, ArrowRight, BarChart3, BrainCircuit, MessageSquare, RefreshCw, ShieldAlert, ThumbsDown, ThumbsUp, Sparkles } from 'lucide-react';
+import { apiFetch } from '@/lib/api-client';
 
 interface DashboardData {
   project: { id: string; name: string; description: string | null; lastScanAt: string | null };
@@ -42,9 +43,9 @@ export default function ProjectDashboard({ params }: { params: Promise<{ slug: s
     setError(null);
     try {
       const [summary, charts, recent] = await Promise.all([
-        fetch(`/api/projects/${slug}/dashboard/summary`).then((r) => r.json()),
-        fetch(`/api/projects/${slug}/dashboard/charts`).then((r) => r.json()),
-        fetch(`/api/projects/${slug}/dashboard/recent`).then((r) => r.json()),
+        apiFetch(`/api/projects/${slug}/dashboard/summary`).then((r) => r.json()),
+        apiFetch(`/api/projects/${slug}/dashboard/charts`).then((r) => r.json()),
+        apiFetch(`/api/projects/${slug}/dashboard/recent`).then((r) => r.json()),
       ]);
       if (summary?.error || charts?.error || recent?.error) {
         setError(`Gagal memuat dashboard: ${summary?.error ?? charts?.error ?? recent?.error}`);
@@ -76,7 +77,7 @@ export default function ProjectDashboard({ params }: { params: Promise<{ slug: s
     // RUNNING rows (worker died, or no worker is online yet) so we don't show
     // a phantom "Scanning…" spinner on every dashboard mount.
     try {
-      const r = await fetch(`/api/projects/${slug}/scan`);
+      const r = await apiFetch(`/api/projects/${slug}/scan`);
       const j = await r.json();
       const p = j.progress;
       if (!p) return;
@@ -94,7 +95,7 @@ export default function ProjectDashboard({ params }: { params: Promise<{ slug: s
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(async () => {
       try {
-        const r = await fetch(`/api/projects/${slug}/scan?scanRunId=${scanRunId}`);
+        const r = await apiFetch(`/api/projects/${slug}/scan?scanRunId=${scanRunId}`);
         const j = await r.json();
         if (j.progress) {
           setProgress(j.progress);
@@ -113,7 +114,7 @@ export default function ProjectDashboard({ params }: { params: Promise<{ slug: s
 
   async function runScan() {
     setError(null);
-    const r = await fetch(`/api/projects/${slug}/scan`, { method: 'POST' });
+    const r = await apiFetch(`/api/projects/${slug}/scan`, { method: 'POST' });
     if (!r.ok) { setError((await r.json().catch(() => ({}))).error ?? 'Scan failed'); return; }
     const { scanRunId } = await r.json();
     setProgress({
@@ -126,7 +127,7 @@ export default function ProjectDashboard({ params }: { params: Promise<{ slug: s
   async function regenerateSummary() {
     setRegenSummary(true);
     try {
-      const r = await fetch(`/api/projects/${slug}/summary`, { method: 'POST' });
+      const r = await apiFetch(`/api/projects/${slug}/summary`, { method: 'POST' });
       if (r.ok) await load(false);
     } finally {
       setRegenSummary(false);
@@ -137,7 +138,7 @@ export default function ProjectDashboard({ params }: { params: Promise<{ slug: s
     setReanalyzing(true);
     setReanalyzeMsg(null);
     try {
-      const r = await fetch(`/api/projects/${slug}/reanalyze`, { method: 'POST' });
+      const r = await apiFetch(`/api/projects/${slug}/reanalyze`, { method: 'POST' });
       const j = await r.json();
       if (!r.ok) {
         setReanalyzeMsg(j.error ?? 'Re-analyze gagal');

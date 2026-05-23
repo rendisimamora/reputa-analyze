@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { setToken } from '@/lib/api-client';
 import { Radar } from 'lucide-react';
 
 export default function LoginPage() {
@@ -27,7 +28,22 @@ export default function LoginPage() {
       setError(j.error ?? 'Login failed');
       return;
     }
-    router.push('/projects');
+    const j = await r.json();
+    if (!j?.token) {
+      setError('Login response missing token');
+      return;
+    }
+    setToken(j.token);
+    // Restore deep-link if the user was redirected here by apiFetch's 401 handler.
+    let redirect = '/projects';
+    try {
+      const stored = sessionStorage.getItem('reputascan_redirect_after_login');
+      if (stored) {
+        sessionStorage.removeItem('reputascan_redirect_after_login');
+        redirect = stored;
+      }
+    } catch { /* ignore */ }
+    router.push(redirect);
     router.refresh();
   }
 

@@ -4,6 +4,7 @@ import { use, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CheckCircle2, Loader2, Power, Save, Send, Settings as SettingsIcon, Trash2, X, AlertTriangle } from 'lucide-react';
 import { clsx } from 'clsx';
+import { apiFetch } from '@/lib/api-client';
 
 interface Keyword { id: string; term: string; matchMode: 'ANY' | 'ALL' }
 interface Project {
@@ -59,7 +60,7 @@ export default function ProjectSettings({ params }: { params: Promise<{ slug: st
   }, []);
 
   async function load() {
-    const r = await fetch(`/api/projects/${slug}`);
+    const r = await apiFetch(`/api/projects/${slug}`);
     if (!r.ok) { setError('Project tidak ditemukan'); return; }
     const { project: p } = (await r.json()) as { project: Project };
     setProject(p);
@@ -77,7 +78,7 @@ export default function ProjectSettings({ params }: { params: Promise<{ slug: st
     setSavingTelegram(true);
     setTelegramMsg(null);
     try {
-      const r = await fetch(`/api/projects/${slug}`, {
+      const r = await apiFetch(`/api/projects/${slug}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -110,7 +111,7 @@ export default function ProjectSettings({ params }: { params: Promise<{ slug: st
     setTestingTelegram(true);
     setTelegramMsg(null);
     try {
-      const r = await fetch(`/api/projects/${slug}/telegram-test`, {
+      const r = await apiFetch(`/api/projects/${slug}/telegram-test`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -146,7 +147,7 @@ export default function ProjectSettings({ params }: { params: Promise<{ slug: st
     setError(null);
     setSavedMsg(null);
     try {
-      const r = await fetch(`/api/projects/${slug}`, {
+      const r = await apiFetch(`/api/projects/${slug}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ name, description: description || null, active }),
@@ -185,7 +186,7 @@ export default function ProjectSettings({ params }: { params: Promise<{ slug: st
     setError(null);
     setSavedMsg(null);
     try {
-      const r = await fetch(`/api/projects/${slug}/keywords`, {
+      const r = await apiFetch(`/api/projects/${slug}/keywords`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ keywords, matchMode }),
@@ -205,7 +206,7 @@ export default function ProjectSettings({ params }: { params: Promise<{ slug: st
   async function deleteProject() {
     setDeleting(true);
     try {
-      const r = await fetch(`/api/projects/${slug}`, { method: 'DELETE' });
+      const r = await apiFetch(`/api/projects/${slug}`, { method: 'DELETE' });
       if (r.ok) {
         // Sync sidebar immediately, no extra fetch.
         window.dispatchEvent(new CustomEvent('reputascan:project-deleted', { detail: { slug } }));

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Radar } from 'lucide-react';
+import { setToken } from '@/lib/api-client';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -28,6 +29,8 @@ export default function RegisterPage() {
       setError(j.error ?? 'Registration failed');
       return;
     }
+    const j = await r.json();
+    if (j?.token) setToken(j.token);
     router.push('/projects');
     router.refresh();
   }

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { X } from 'lucide-react';
+import { apiFetch } from '@/lib/api-client';
 
 export default function NewProject() {
   const router = useRouter();
@@ -31,7 +32,7 @@ export default function NewProject() {
     if (!keywords.length) { setError('Tambahkan minimal 1 keyword'); return; }
     setLoading(true);
     setError(null);
-    const r = await fetch('/api/projects', {
+    const r = await apiFetch('/api/projects', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name, description, keywords, matchMode }),
@@ -44,7 +45,7 @@ export default function NewProject() {
     }
     const { project } = await r.json();
     // Trigger first scan in background; user can navigate immediately
-    fetch(`/api/projects/${project.slug}/scan`, { method: 'POST' }).catch(() => {});
+    apiFetch(`/api/projects/${project.slug}/scan`, { method: 'POST' }).catch(() => {});
     router.push(`/projects/${project.slug}`);
   }
 

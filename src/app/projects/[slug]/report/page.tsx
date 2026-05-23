@@ -4,6 +4,7 @@ import { use, useEffect, useRef, useState } from 'react';
 import { FileDown, FileText, RefreshCw } from 'lucide-react';
 import { SentimentTrendChart, MentionTrendChart, SourceBarChart } from '@/components/charts';
 import { SentimentBadge } from '@/components/SentimentBadge';
+import { apiFetch } from '@/lib/api-client';
 
 interface ReportData {
   project: { name: string };
@@ -36,7 +37,7 @@ export default function ReportPage({ params }: { params: Promise<{ slug: string 
 
   async function generate() {
     setLoading(true);
-    const r = await fetch(`/api/projects/${slug}/report`, {
+    const r = await apiFetch(`/api/projects/${slug}/report`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({}),

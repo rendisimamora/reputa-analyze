@@ -5,6 +5,7 @@ import { CrawlStatusBadge } from '@/components/SentimentBadge';
 import { CrawlLogsSkeleton } from '@/components/PageSkeletons';
 import { ChevronLeft, ChevronRight, Loader2, RefreshCw, X } from 'lucide-react';
 import { clsx } from 'clsx';
+import { apiFetch } from '@/lib/api-client';
 
 interface CrawlLog {
   id: string;
@@ -63,7 +64,7 @@ export default function CrawlLogsPage({ params }: { params: Promise<{ slug: stri
       if (filters.to) qs.set('to', filters.to);
 
       try {
-        const r = await fetch(`/api/projects/${slug}/crawl-logs?${qs.toString()}`);
+        const r = await apiFetch(`/api/projects/${slug}/crawl-logs?${qs.toString()}`);
         const j = await r.json();
         setLogs(j.items ?? []);
         setTotal(j.total ?? 0);

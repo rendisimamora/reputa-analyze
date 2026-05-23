@@ -4,6 +4,7 @@ import { use, useEffect, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import { Bell, Check, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
 import { AlertsSkeleton } from '@/components/PageSkeletons';
+import { apiFetch } from '@/lib/api-client';
 
 interface AlertSample {
   id: string;
@@ -48,14 +49,14 @@ export default function AlertsPage({ params }: { params: Promise<{ slug: string 
   }, []);
 
   async function load() {
-    const r = await fetch(`/api/projects/${slug}/alerts`);
+    const r = await apiFetch(`/api/projects/${slug}/alerts`);
     const j = await r.json();
     setAlerts(j.alerts ?? []);
   }
 
   async function ack(alertId: string) {
     setAlerts((cur) => (cur ? cur.map((a) => (a.id === alertId ? { ...a, acknowledged: true } : a)) : cur));
-    await fetch(`/api/projects/${slug}/alerts`, {
+    await apiFetch(`/api/projects/${slug}/alerts`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ alertId, acknowledged: true }),

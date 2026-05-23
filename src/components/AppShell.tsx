@@ -18,6 +18,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { clsx } from 'clsx';
+import { apiFetch, clearToken } from '@/lib/api-client';
 
 interface Project {
   id: string;     // UUID — internal only
@@ -54,10 +55,10 @@ export default function AppShell({
 
   useEffect(() => {
     (async () => {
-      const me = await fetch('/api/auth/me').then((r) => r.json()).catch(() => null);
+      const me = await apiFetch('/api/auth/me').then((r) => r.json()).catch(() => null);
       if (!me?.user) return router.push('/login');
       setUser(me.user);
-      const p = await fetch('/api/projects').then((r) => r.json()).catch(() => ({ projects: [] }));
+      const p = await apiFetch('/api/projects').then((r) => r.json()).catch(() => ({ projects: [] }));
       setProjects(p.projects ?? []);
     })();
   }, [router]);
@@ -111,7 +112,9 @@ export default function AppShell({
   }, [open]);
 
   async function logout() {
-    await fetch('/api/auth/logout', { method: 'POST' });
+    // Best-effort server notification, but client-side token clear is what matters.
+    try { await apiFetch('/api/auth/logout', { method: 'POST' }); } catch { /* ignore */ }
+    clearToken();
     router.push('/login');
   }
 

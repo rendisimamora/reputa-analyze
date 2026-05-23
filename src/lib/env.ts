@@ -19,6 +19,10 @@ export const env = {
   // ----- Auth -----
   sessionPassword:
     process.env.SESSION_PASSWORD ?? 'change-me-to-a-random-32+character-string-please',
+  // JWT signing secret. WAJIB di-set di production (min 32 chars).
+  jwtSecret: process.env.JWT_SECRET ?? '',
+  // Token lifetime in seconds. Default 7 days.
+  jwtTtlSeconds: Number(process.env.JWT_TTL_SECONDS ?? 60 * 60 * 24 * 7),
 
   // ----- Crawler -----
   crawlerUserAgent:

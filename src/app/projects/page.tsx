@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight, Loader2, Radar, Trash2 } from 'lucide-react';
+import { apiFetch } from '@/lib/api-client';
 
 interface Project {
   id: string;
@@ -27,7 +28,7 @@ export default function ProjectsList() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const r = await fetch('/api/projects');
+    const r = await apiFetch('/api/projects');
     const j = await r.json();
     setProjects(j.projects ?? []);
   }, []);
@@ -45,7 +46,7 @@ export default function ProjectsList() {
     setDeletingId(slug);
     setError(null);
     try {
-      const r = await fetch(`/api/projects/${slug}`, { method: 'DELETE' });
+      const r = await apiFetch(`/api/projects/${slug}`, { method: 'DELETE' });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
         setError(j.error ?? 'Gagal menghapus project');
